@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.env
+
+# Run artifacts are append-only local evidence, not source. Commit a scorecard
+# deliberately (git add -f) when it needs to be part of a review.
+runs/*/
+!runs/.gitkeep

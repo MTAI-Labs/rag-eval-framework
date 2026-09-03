@@ -1,0 +1,9 @@
+{
+  "scores": {
+    "faithfulness": 5,
+    "correctness": 4,
+    "completeness": 4,
+    "citation_accuracy": 4
+  },
+  "rationale": "Canned reply for offline smoke runs — not a real judgement."
+}
