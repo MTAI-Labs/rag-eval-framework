@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      # The core is stdlib-only and the smoke test uses a mock adapter and a
+      # scripted judge, so CI needs no GPU, no network and no gateway key.
+      - run: pytest -q
+      - name: golden set is intact
+        run: rag-eval dataset-check
