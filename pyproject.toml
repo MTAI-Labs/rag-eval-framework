@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag-eval-framework"
+version = "0.1.0"
+description = "Product-agnostic evaluation harness for RAG services: retrieval, generation (LLM-judge panel) and ops metrics with run-over-run regression diffs."
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [{ name = "Aiman Faris" }]
+dependencies = []
+
+# The core (dataset loader, metrics, reporting, mock adapter, full CLI pipeline)
+# is deliberately stdlib-only so the CI smoke test needs no GPU, network or wheels.
+[project.optional-dependencies]
+judge = ["openai>=1.40"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+rag-eval = "rag_eval.cli.main:main"
+
+[tool.setuptools.packages.find]
+include = ["rag_eval*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
