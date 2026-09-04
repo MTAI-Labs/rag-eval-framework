@@ -12,6 +12,7 @@ it did before anyone trusts a score.
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -36,6 +37,12 @@ DEFAULTS = {
     "prompt_tokens_field": "usage.prompt_tokens",
     "completion_tokens_field": "usage.completion_tokens",
     "model_field": "model",
+    # Environment probing. The NIM's own /v1/models is authoritative for the
+    # embedding model; a collection's recorded metadata is a label that can go
+    # stale against what the service actually loaded.
+    "models_path": "/v1/models",
+    "collection_info_path": "",          # e.g. "/v1/collections/{collection}"
+    "sparse_markers": ["sparse", "bm25", "BM25"],
 }
 
 
@@ -141,6 +148,61 @@ class NvidiaRagAdapter(RagAdapter):
         if not trace.generated_answer and not trace.retrieved_chunks:
             trace.error = "empty response from RAG server"
         return trace
+
+    def probe_environment(self) -> dict[str, Any]:
+        """Read the served embedding model and the collection's retrieval mode.
+
+        Both are recorded with *how* they were determined, because "the NIM told
+        us" and "a collection metadata field claimed it" are not the same
+        evidence and a manifest that blurs them is not provenance.
+        """
+        env: dict[str, Any] = {
+            "base_url": self.base_url,
+            "collection": self.collection,
+            "embedding_model": "unknown",
+            "embedding_model_source": "unknown",
+            "retrieval_mode": "unknown",
+            "retrieval_mode_source": "unknown",
+        }
+
+        models_path = str(self.settings.get("models_path") or "")
+        if models_path:
+            try:
+                body = get_json(
+                    f"{self.base_url}{models_path}", headers=self._headers(), timeout=15.0
+                )
+                ids = [
+                    m.get("id")
+                    for m in (body or {}).get("data", [])
+                    if isinstance(m, dict) and m.get("id")
+                ]
+                if ids:
+                    env["embedding_model"] = ids[0] if len(ids) == 1 else ", ".join(sorted(ids))
+                    env["embedding_model_source"] = f"served: {models_path}"
+            except Exception as exc:  # noqa: BLE001 - a probe never fails a run
+                env["embedding_model_source"] = f"probe failed: {exc}"[:200]
+
+        info_path = str(self.settings.get("collection_info_path") or "")
+        if info_path:
+            try:
+                body = get_json(
+                    f"{self.base_url}{info_path.format(collection=self.collection)}",
+                    headers=self._headers(), timeout=15.0,
+                )
+                blob = json.dumps(body).lower()
+                markers = [str(m).lower() for m in self.settings.get("sparse_markers", [])]
+                env["retrieval_mode"] = "hybrid" if any(m in blob for m in markers) else "dense"
+                env["retrieval_mode_source"] = f"probed: {info_path}"
+            except Exception as exc:  # noqa: BLE001
+                env["retrieval_mode_source"] = f"probe failed: {exc}"[:200]
+
+        # Let an operator state what a probe cannot reach, clearly marked as such.
+        for key in ("retrieval_mode", "embedding_model"):
+            declared = self.options.get(key)
+            if declared and env[key] == "unknown":
+                env[key] = str(declared)
+                env[f"{key}_source"] = "declared in config (unverified)"
+        return env
 
     def metadata_coverage(self, trace: RagTrace) -> dict[str, Any]:
         """How much of the retrieved set carries scoreable Hansard metadata."""

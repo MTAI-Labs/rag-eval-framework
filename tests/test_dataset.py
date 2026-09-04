@@ -96,14 +96,15 @@ def test_converts_the_real_workbook(tmp_path):
     assert report.unparsed_reference == []
     assert manifest.count == 371
 
-    # 14, not the spec's 16: the two `kr_` references are a typo of `kkdr_` on
-    # dates that already have a kkdr_ sitting, so they are not separate sittings
-    # and are not two more Hansard PDFs to collect. See datasets/README.md.
+    # 14, not the spec's 16: the two `kr_` references were a typo of `kkdr_` on
+    # dates that already had a kkdr_ sitting, so they were never separate
+    # sittings and never two more Hansard PDFs to collect. See datasets/README.md.
     assert len(report.sittings) == 14
-    assert [(i, s) for i, _, s in report.aliased_doc_types] == [
-        ("tp-0231", "kkdr_2026-07-14"),
-        ("tp-0247", "kkdr_2026-07-15"),
-    ]
+
+    # The workbook has since been corrected at source, so nothing needs aliasing
+    # any more. DOC_TYPE_ALIASES stays as a guard against the typo reappearing —
+    # this asserts the source is clean, not that the guard was removed.
+    assert report.aliased_doc_types == []
 
     loaded = load_golden_set(out)
     assert len(loaded) == 371

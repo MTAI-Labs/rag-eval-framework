@@ -34,6 +34,11 @@ h2{font-size:16px;margin:36px 0 12px;padding-bottom:6px;border-bottom:1px solid 
 .up{color:var(--good)}.down{color:var(--bad)}.flat{color:var(--muted)}
 .warn{background:var(--warnbg);border:1px solid #f0dcb0;border-left:4px solid var(--warn);
 border-radius:8px;padding:12px 16px;margin:18px 0;color:#5b4200}
+.stop{background:#fbe9e7;border:1px solid #f3c0ba;border-left:4px solid var(--bad);
+border-radius:8px;padding:14px 18px;margin:18px 0;color:#7a1b12}
+.stop h3{margin:0 0 6px;font-size:15px}
+.stop table{margin-top:8px;background:transparent;border:none}
+.stop th,.stop td{border-bottom:1px solid #f3c0ba;padding:5px 10px}
 .warn ul{margin:6px 0 0;padding-left:20px}
 table{width:100%;border-collapse:collapse;background:var(--card);
 border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -131,6 +136,45 @@ def _warnings_block(warnings: list[str]) -> str:
         return ""
     items = "".join(f"<li>{_esc(w)}</li>" for w in warnings)
     return f'<div class="warn"><strong>Read this before the numbers</strong><ul>{items}</ul></div>'
+
+
+def _comparability_banner(diff: dict[str, Any] | None) -> str:
+    """Say plainly when the two runs are not the same system.
+
+    This sits above the headline numbers because a reader who sees "+0.12
+    hit_rate@5" first has already drawn the wrong conclusion.
+    """
+    drift = (diff or {}).get("environment_drift") or {}
+    if not diff or diff.get("comparable", True):
+        return ""
+    rows = "".join(
+        f"<tr><td class='mono'>{_esc(d['field'])}</td>"
+        f"<td class='mono'>{_esc(d['baseline'])}</td>"
+        f"<td class='mono'>{_esc(d['current'])}</td></tr>"
+        for d in drift.get("differences", [])
+    )
+    return (
+        '<div class="stop"><h3>These two runs are not the same system</h3>'
+        "The RAG stack itself changed between the baseline and this run, so the "
+        "differences below measure a different system rather than a change to the same "
+        "one. Do <strong>not</strong> read them as improvement or regression."
+        f"<table><thead><tr><th>Field</th><th>Baseline</th><th>Current</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></div>"
+    )
+
+
+def _environment_block(env: dict[str, Any]) -> str:
+    if not env:
+        return ""
+    rows = "".join(
+        f"<tr><td class='mono'>{_esc(k)}</td><td class='mono'>{_esc(v)}</td></tr>"
+        for k, v in env.items()
+    )
+    return (
+        "<h2>RAG environment (as reported by the stack at run time)</h2>"
+        f'<div class="scroll"><table><thead><tr><th>Field</th><th>Value</th></tr></thead>'
+        f"<tbody>{rows}</tbody></table></div>"
+    )
 
 
 def _diff_table(diff: dict[str, Any] | None) -> str:
@@ -312,6 +356,7 @@ def render(
 <body><div class="wrap">
 <h1>RAG evaluation scorecard</h1>
 <p class="sub"><span class="mono">{_esc(run_id)}</span><br>{provenance}</p>
+{_comparability_banner(diff)}
 {_warnings_block(scorecard.get("warnings", []))}
 {_headline_cards(scorecard, diff)}
 {_diff_table(diff)}
@@ -320,6 +365,7 @@ def render(
 {_metric_block("Generation", scorecard.get("generation", {}))}
 {_metric_block("Ops", scorecard.get("ops", {}))}
 {_judges_table(scorecard.get("judges", {}), scorecard.get("generation", {}))}
+{_environment_block(scorecard.get("rag_environment", {}))}
 {_questions_table(scorecard.get("per_question", []))}
 <details><summary>Run manifest</summary>
 <pre class="mono">{_esc(json.dumps(manifest, indent=2, ensure_ascii=False))}</pre></details>

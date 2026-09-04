@@ -3,6 +3,7 @@
 Stages are deliberately separate commands over one run directory:
 
     rag-eval convert-golden       Excel  -> versioned golden_v1.jsonl (+ manifest)
+    rag-eval corpus-check         are the Hansard PDFs the ones we checksummed?
     rag-eval ingest-check         is the collection's metadata good enough to score?
     rag-eval run                  golden set -> traces.jsonl
     rag-eval judge                traces    -> judgments.jsonl
@@ -28,7 +29,22 @@ from rag_eval import __version__
 from rag_eval.adapters import available, get_adapter
 from rag_eval.config import Config, load_config, load_dotenv
 from rag_eval.dataset.convert import convert_workbook
-from rag_eval.dataset.loader import DatasetError, load_golden_set, read_manifest
+from rag_eval.dataset.corpus import (
+    DEFAULT_CORPUS_DIR,
+    CorpusError,
+    build_manifest,
+    coverage,
+    manifest_path_for,
+    read_corpus_manifest,
+    verify_corpus,
+    write_manifest,
+)
+from rag_eval.dataset.loader import (
+    DatasetError,
+    dataset_checksum,
+    load_golden_set,
+    read_manifest,
+)
 from rag_eval.judges.calibration import (
     CalibrationSample,
     agreement_report,
@@ -205,6 +221,79 @@ def cmd_dataset_check(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def cmd_corpus_check(args: argparse.Namespace, config: Config) -> int:
+    """Verify the Hansard PDFs against their manifest, or write a new manifest.
+
+    The golden set is checksummed; the documents it points at get the same
+    treatment. A re-downloaded or truncated Hansard changes what the retriever
+    can possibly find, and every score compared across that change is
+    meaningless -- so this fails loudly rather than letting it pass quietly.
+    """
+    items: list[GoldenItem] = []
+    golden_sha = ""
+    if not args.no_golden_set:
+        try:
+            items = load_golden_set(args.dataset, verify_checksum=not args.no_verify_checksum)
+            golden_sha = dataset_checksum(args.dataset)
+        except DatasetError as exc:
+            _err(f"error: golden set: {exc}")
+            return 1
+
+    if args.write:
+        manifest = build_manifest(
+            args.corpus_dir, items,
+            golden_set=Path(args.dataset).name if items else "",
+            golden_set_sha256=golden_sha,
+        )
+        path = write_manifest(args.corpus_dir, manifest)
+        _out(f"Manifest -> {path}  ({len(manifest.documents)} document(s), "
+             f"{manifest.total_bytes / 1e6:.1f} MB)")
+        _out(f"  {'document':<24}{'pages':>7}{'questions':>11}  sha256")
+        for doc in manifest.documents:
+            _out(f"  {doc.filename:<24}{_fmt(doc.page_count):>7}"
+                 f"{doc.golden_questions:>11}  {doc.sha256[:16]}…")
+        _out("\nCommit the manifest, then verify anytime with 'rag-eval corpus-check'.")
+        return 0
+
+    try:
+        manifest = read_corpus_manifest(args.corpus_dir)
+    except CorpusError as exc:
+        _err(f"error: {exc}")
+        return 1
+
+    report = verify_corpus(args.corpus_dir, manifest, items,
+                           golden_set_sha256=golden_sha)
+
+    _out(f"Corpus     {report.corpus_dir}")
+    _out(f"Manifest   {manifest_path_for(args.corpus_dir)}  "
+         f"(written {manifest.created_at or 'unknown'})")
+    _out(f"Verified   {report.verified}/{report.documents} document(s), "
+         f"{report.checked_bytes / 1e6:.1f} MB of sha256 checked")
+
+    if items:
+        stats = coverage(manifest, items, report.present_sittings)
+        _out(f"Coverage   {stats['questions_covered']}/{stats['questions_with_a_reference']} "
+             f"referenced question(s) have a PDF ({_pct(stats['coverage'])})")
+
+    for failure in report.failures:
+        _out(f"  FAIL  {failure}")
+    for warning in report.warnings:
+        _out(f"  warn  {warning}")
+
+    _out(f"\n{report.verdict}")
+    if report.ok and items:
+        _out("Page counts bound the 'ms.' references, but printed page numbers may be "
+             "offset from physical PDF pages — 'rag-eval ingest-check' is what confirms "
+             "the mapping actually survived ingestion.")
+
+    if args.output:
+        Path(args.output).write_text(
+            json.dumps(report.to_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        _out(f"Full report -> {args.output}")
+    return 0 if report.ok else 1
+
+
 def cmd_ingest_check(args: argparse.Namespace, config: Config) -> int:
     items = _load_items(args)
     adapter = get_adapter(args.adapter, **_adapter_options(config, args))
@@ -232,6 +321,20 @@ def cmd_ingest_check(args: argparse.Namespace, config: Config) -> int:
     return 0 if str(report["verdict"]).startswith(("PASS", "WARN")) else 1
 
 
+def _probe_environment(adapter: Any) -> dict[str, Any]:
+    """Record what the stack actually is; never let a probe abort a run."""
+    try:
+        env = adapter.probe_environment()
+    except Exception as exc:  # noqa: BLE001
+        return {"probe_error": f"{type(exc).__name__}: {exc}"[:200]}
+    if env:
+        _out(
+            f"  stack: retrieval={env.get('retrieval_mode', '?')}  "
+            f"embedding={env.get('embedding_model', '?')}"
+        )
+    return env
+
+
 def cmd_run(args: argparse.Namespace, config: Config) -> int:
     items = _load_items(args)
     options = _adapter_options(config, args)
@@ -252,6 +355,7 @@ def cmd_run(args: argparse.Namespace, config: Config) -> int:
             dataset_count=dataset_manifest.count if dataset_manifest else len(items),
             questions_run=len(items),
             adapter_config=adapter.describe(),
+            rag_environment=_probe_environment(adapter),
             judge_models=[m.id for m in config.judge.models],
             config=config.to_dict(),
             notes=args.note,
@@ -366,6 +470,7 @@ def cmd_score(args: argparse.Namespace, config: Config) -> int:
         dataset=manifest.dataset,
         created_at=manifest.created_at,
         judge_usage=usage,
+        rag_environment=manifest.rag_environment,
     )
     store.write_scorecard(card.to_dict())
     store.stamp_stage("score")
@@ -405,6 +510,11 @@ def cmd_report(args: argparse.Namespace, config: Config) -> int:
 
     _out(f"Scorecard  -> {path}")
     _out(f"Diff       -> {store.dir / 'diff.json'}")
+    if not diff.get("comparable", True):
+        _out("\n  !! NOT COMPARABLE — the RAG stack changed between these runs:")
+        for d in diff["environment_drift"]["differences"]:
+            _out(f"       {d['field']}: {d['baseline']} -> {d['current']}")
+        _out("     The deltas below measure a different system, not a change to the same one.")
     if diff["has_baseline"]:
         _out(f"\nvs {diff['baseline_run_id']}: " + " · ".join(
             f"{v} {k}" for k, v in sorted(diff["summary"].items())
@@ -644,6 +754,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_dataset_check)
 
     p = subparsers.add_parser(
+        "corpus-check", help="verify the Hansard PDFs against their sha256 manifest"
+    )
+    p.add_argument("--corpus-dir", default=str(DEFAULT_CORPUS_DIR))
+    p.add_argument("--dataset", default=DEFAULT_DATASET,
+                   help="golden set to cross-check the corpus against")
+    p.add_argument("--no-verify-checksum", action="store_true")
+    p.add_argument("--no-golden-set", action="store_true",
+                   help="check the PDFs alone, without cross-checking the golden set")
+    p.add_argument("--write", action="store_true",
+                   help="(re)generate the manifest from what is on disk")
+    p.add_argument("--output", help="write the full report as JSON")
+    p.set_defaults(func=cmd_corpus_check)
+
+    p = subparsers.add_parser(
         "ingest-check", help="verify the collection carries sitting id + page metadata"
     )
     add_dataset_args(p)
@@ -743,7 +867,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = load_config(args.config)
     try:
         return args.func(args, config)
-    except (DatasetError, FileNotFoundError, ValueError) as exc:
+    except (DatasetError, CorpusError, FileNotFoundError, ValueError) as exc:
         _err(f"error: {exc}")
         return 1
     except KeyboardInterrupt:  # pragma: no cover - interactive

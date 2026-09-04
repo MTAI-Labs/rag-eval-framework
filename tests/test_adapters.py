@@ -142,3 +142,53 @@ def test_tanyaparlimen_adapter_describes_itself_without_secrets(monkeypatch):
 
     assert "super-secret" not in described
     assert "api.test" in described
+
+
+def test_probe_environment_defaults_to_unknown_not_a_guess(monkeypatch):
+    # An unreachable stack must yield "unknown", never a plausible-looking
+    # value: a manifest that guesses is worse than one that admits it.
+    monkeypatch.setenv("NVIDIA_RAG_BASE_URL", "http://unreachable.invalid:8081")
+    env = NvidiaRagAdapter().probe_environment()
+
+    assert env["embedding_model"] == "unknown"
+    assert env["retrieval_mode"] == "unknown"
+    assert "probe failed" in env["embedding_model_source"]
+
+
+def test_a_declared_value_is_recorded_as_unverified(monkeypatch):
+    monkeypatch.setenv("NVIDIA_RAG_BASE_URL", "http://unreachable.invalid:8081")
+    env = NvidiaRagAdapter(retrieval_mode="hybrid").probe_environment()
+
+    assert env["retrieval_mode"] == "hybrid"
+    assert env["retrieval_mode_source"] == "declared in config (unverified)"
+
+
+def test_the_served_model_wins_over_a_declared_one(monkeypatch):
+    # The NIM's /v1/models is evidence; a config entry is a claim. A stale
+    # collection label must never silently become the manifest's answer.
+    monkeypatch.setenv("NVIDIA_RAG_BASE_URL", "http://rtx6000.test:8081")
+    import rag_eval.adapters.nvidia as nv
+    monkeypatch.setattr(
+        nv, "get_json",
+        lambda url, **kw: {"data": [{"id": "nvidia/llama-nemotron-embed-1b-v2"}]},
+    )
+    env = nv.NvidiaRagAdapter(embedding_model="nvidia/llama-3.2-nv-embedqa-1b-v2").probe_environment()
+
+    assert env["embedding_model"] == "nvidia/llama-nemotron-embed-1b-v2"
+    assert env["embedding_model_source"] == "served: /v1/models"
+
+
+def test_hybrid_is_detected_from_the_collection_description(monkeypatch):
+    monkeypatch.setenv("NVIDIA_RAG_BASE_URL", "http://rtx6000.test:8081")
+    import rag_eval.adapters.nvidia as nv
+    monkeypatch.setattr(
+        nv, "get_json",
+        lambda url, **kw: {"fields": [{"name": "vector"}, {"name": "sparse"}],
+                           "functions": [{"type": "BM25"}]},
+    )
+    env = nv.NvidiaRagAdapter(collection_info_path="/v1/collections/{collection}").probe_environment()
+    assert env["retrieval_mode"] == "hybrid"
+
+    monkeypatch.setattr(nv, "get_json", lambda url, **kw: {"fields": [{"name": "vector"}]})
+    env = nv.NvidiaRagAdapter(collection_info_path="/v1/collections/{collection}").probe_environment()
+    assert env["retrieval_mode"] == "dense"

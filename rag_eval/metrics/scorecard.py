@@ -41,6 +41,7 @@ class Scorecard:
     generation: dict[str, Any] = field(default_factory=dict)
     ops: dict[str, Any] = field(default_factory=dict)
     judges: dict[str, Any] = field(default_factory=dict)
+    rag_environment: dict[str, Any] = field(default_factory=dict)
     per_question: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -61,6 +62,7 @@ class Scorecard:
             "generation": self.generation,
             "ops": self.ops,
             "judges": self.judges,
+            "rag_environment": self.rag_environment,
             "warnings": self.warnings,
             "headline": self.headline(),
             "per_question": self.per_question,
@@ -77,6 +79,7 @@ class Scorecard:
             generation=d.get("generation", {}),
             ops=d.get("ops", {}),
             judges=d.get("judges", {}),
+            rag_environment=d.get("rag_environment", {}),
             per_question=d.get("per_question", []),
             warnings=list(d.get("warnings", [])),
         )
@@ -93,6 +96,7 @@ def build_scorecard(
     dataset: str = "",
     created_at: str = "",
     judge_usage: PanelUsage | None = None,
+    rag_environment: dict[str, Any] | None = None,
 ) -> Scorecard:
     config = config or Config()
     verdicts = list(verdicts or [])
@@ -124,6 +128,7 @@ def build_scorecard(
             judge_usage=judge_usage,
         ),
         judges=generation.per_judge_scores(verdicts),
+        rag_environment=dict(rag_environment or {}),
     )
 
     verdict_by_id = {v.question_id: v for v in verdicts}
@@ -192,6 +197,22 @@ def _warnings(card: Scorecard) -> list[str]:
     error_rate = card.ops.get("error_rate")
     if error_rate:
         out.append(f"Adapter error rate {error_rate:.1%} — failed questions are excluded from judging.")
+
+    env = card.rag_environment
+    if env:
+        if env.get("retrieval_mode") == "unknown":
+            out.append(
+                "Retrieval mode (dense vs hybrid) could not be determined — a dense-only "
+                "and a hybrid collection score differently on identical vectors, so a diff "
+                "against another run may be comparing two different retrieval paths."
+            )
+        source = str(env.get("embedding_model_source", ""))
+        if source.startswith(("declared", "unknown", "probe failed")):
+            out.append(
+                f"Embedding model is not verified against the serving stack "
+                f"({source or 'unknown'}) — a recorded model id can be a stale label for "
+                f"what is actually loaded."
+            )
 
     for model, stats in card.judges.items():
         if stats.get("failure_rate") and stats["failure_rate"] > 0.05:

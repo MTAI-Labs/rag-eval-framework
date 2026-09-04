@@ -8,8 +8,6 @@ The framework is product-agnostic: each RAG service plugs in through a thin
 adapter. Two ship today — the hosted NVIDIA RAG stack on the RTX6000 cluster and
 TanyaParlimen's production RAG.
 
-Implements the approved design in `2026-09-02-rag-eval-framework-design.md`.
-
 ---
 
 ## Quickstart
@@ -20,7 +18,8 @@ pip install -e ".[dev]"           # add ".[judge]" for the real judge panel
 cp .env.example .env              # fill in THOTH_BASE_URL, endpoints, keys
 
 rag-eval convert-golden           # TanyaParlimen QnA.xlsx -> datasets/golden_v1.jsonl
-rag-eval dataset-check            # schema + checksum
+rag-eval dataset-check            # golden set: schema + checksum
+rag-eval corpus-check             # Hansard PDFs: sha256, page counts, coverage
 rag-eval ingest-check --adapter nvidia   # is the collection scoreable at all?
 rag-eval eval --adapter nvidia    # run + judge + score + report
 ```
@@ -77,6 +76,7 @@ golden_v1.jsonl ──► run ──► traces.jsonl ──┬──► judge �
 |---|---|
 | `convert-golden` | Workbook → versioned `golden_v1.jsonl` + checksummed manifest |
 | `dataset-check` | Validate a golden set's schema and checksum |
+| `corpus-check` | Verify `datasets/hansard_pdfs/` against its sha256 manifest |
 | `ingest-check` | Probe the collection: do chunks carry sitting id + page? |
 | `run` | Golden set → `traces.jsonl` (resumable, error-tolerant) |
 | `judge` | Traces → `judgments.jsonl` via the 3-model panel |
@@ -212,6 +212,7 @@ rag_eval/
     store.py        append-only run artifacts
     cli/            rag-eval
 datasets/           golden_v1.jsonl + manifest, calibration set, source workbook
+    hansard_pdfs/   the 14 Hansard PDFs, one per sitting + manifest.json (sha256 per document)
                     (see datasets/README.md for the schema and data caveats)
 runs/               run artifacts (gitignored)
 ```
@@ -221,6 +222,20 @@ only be rebuilt when pandas and openpyxl happen to be installed is a framework
 that stops being rebuildable; the `.xlsx` reader is ~60 lines of `zipfile` and
 `ElementTree`. Only the real judge panel needs a dependency (`openai`), so the
 CI smoke test runs the whole pipeline with no GPU, network or gateway key.
+
+## Data integrity
+
+Two artifacts gate every score, and both are checksummed and verifiable:
+
+```bash
+rag-eval dataset-check    # golden_v1.jsonl matches its manifest
+rag-eval corpus-check     # every Hansard PDF matches its sha256, and covers the golden set
+```
+
+Both exit non-zero on a mismatch, so CI catches a quietly edited golden set or a
+re-downloaded Hansard before it silently moves a scorecard. `corpus-check` also
+cross-checks the two against each other: a golden sitting with no PDF, or a
+citation pointing past the last page of its document, is a failure.
 
 ## Testing
 
@@ -248,12 +263,10 @@ Surfaced by `convert-golden`, all handled rather than papered over:
 - **Row 202 reuses `No` 200**, so its id is `tp-0200-r202`. Fix the workbook and
   ids become stable; two questions sharing an id would silently overwrite each
   other's trace.
-- **`kr_` is a typo of `kkdr_`, not a sitting type** — resolved. Both occurrences
-  sit inside contiguous `kkdr_` blocks with the same owner, date and page, on
-  dates that already have a `kkdr_` sitting. The parser corrects it and
-  `convert-golden` reports it. That is why the corpus is 14 sittings, not 16 —
-  two fewer PDFs to collect. Full evidence in
-  [datasets/README.md](datasets/README.md).
+- **`kr_` was a typo of `kkdr_`, not a sitting type** — resolved, and since
+  fixed in the workbook. That is why the corpus is 14 sittings, not the 16 the
+  design spec assumes. `DOC_TYPE_ALIASES` still maps it as a guard against
+  reappearance. Full evidence in [datasets/README.md](datasets/README.md).
 
 ## Not in v1
 

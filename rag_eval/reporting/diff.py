@@ -33,6 +33,16 @@ EXTRA_COMPARISONS = (
 #: A change smaller than this is reported as "flat" rather than as movement.
 DEFAULT_EPSILON = 1e-9
 
+#: Environment facts that make two runs incomparable. If any of these differ,
+#: the metric deltas are measuring a different system rather than a change to
+#: the same one -- a dense-only collection and a hybrid one score differently on
+#: identical vectors, and so do two different embedding models. Calling that a
+#: "regression" is the single easiest way for this framework to mislead someone.
+INVALIDATING_ENVIRONMENT = ("retrieval_mode", "embedding_model", "collection")
+
+#: Differences worth reporting that do not by themselves invalidate a diff.
+NOTABLE_ENVIRONMENT = ("base_url",)
+
 
 @dataclass
 class MetricDelta:
@@ -111,16 +121,52 @@ def compare(
     for row in rows:
         counts[row["verdict"]] = counts.get(row["verdict"], 0) + 1
 
+    env = environment_drift(current, baseline)
+
     return {
         "baseline_run_id": (baseline or {}).get("run_id"),
         "current_run_id": current.get("run_id"),
         "adapter": current.get("adapter"),
         "has_baseline": baseline is not None,
+        "comparable": env["comparable"],
+        "environment_drift": env,
         "summary": counts,
         "regressed": [r for r in rows if r["verdict"] == "regressed"],
         "improved": [r for r in rows if r["verdict"] == "improved"],
         "metrics": rows,
         "per_question": per_question_changes(current, baseline) if baseline else [],
+    }
+
+
+def environment_drift(
+    current: dict[str, Any], baseline: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Whether the two runs describe the same RAG system.
+
+    Returns ``comparable: False`` when the stack itself changed underneath the
+    comparison. The deltas are still computed -- you want to see them -- but a
+    caller must not read them as improvement or regression.
+    """
+    now = (current or {}).get("rag_environment") or {}
+    was = (baseline or {}).get("rag_environment") or {}
+    if not baseline or not (now or was):
+        return {"comparable": True, "checked": bool(now and was), "differences": [], "notes": []}
+
+    def diff_keys(keys):
+        out = []
+        for key in keys:
+            a, b = was.get(key), now.get(key)
+            if a and b and a != b:
+                out.append({"field": key, "baseline": a, "current": b})
+        return out
+
+    differences = diff_keys(INVALIDATING_ENVIRONMENT)
+    notes = diff_keys(NOTABLE_ENVIRONMENT)
+    return {
+        "comparable": not differences,
+        "checked": bool(now and was),
+        "differences": differences,
+        "notes": notes,
     }
 
 
