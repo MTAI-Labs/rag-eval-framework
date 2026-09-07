@@ -110,10 +110,17 @@ def ingest_check(
         round_index += 1
 
     healthy, message = adapter.health()
+    # Before asking how good retrieval is, ask whether there is anything to
+    # retrieve from. A scorecard against a collection that was never created is
+    # not a bad score -- it is no score.
+    collection = (
+        adapter.collection_status() if hasattr(adapter, "collection_status") else {"checked": False}
+    )
     report: dict[str, object] = {
         "adapter": adapter.name,
         "reachable": healthy,
         "health": message,
+        "collection_status": collection,
         "golden_sittings": sorted(by_sitting),
         "probes": len(probes),
         "probe_results": [],
@@ -154,15 +161,30 @@ def ingest_check(
             "sittings_seen": sorted(seen_sittings),
             "sittings_not_seen_in_probe": missing,
             "page_citation_accuracy_computable": bool(chunks_total) and with_page > 0,
-            "verdict": _ingest_verdict(healthy, chunks_total, with_sitting, with_page),
+            "verdict": _ingest_verdict(
+                healthy, chunks_total, with_sitting, with_page, collection
+            ),
         }
     )
     return report
 
 
-def _ingest_verdict(healthy: bool, chunks: int, with_sitting: int, with_page: int) -> str:
+def _ingest_verdict(
+    healthy: bool,
+    chunks: int,
+    with_sitting: int,
+    with_page: int,
+    collection: dict[str, object] | None = None,
+) -> str:
     if not healthy:
         return "FAIL: RAG service unreachable"
+    collection = collection or {}
+    if collection.get("checked") and not collection.get("exists"):
+        return (
+            f"FAIL: collection {collection.get('collection')!r} does not exist on the "
+            f"ingest server ({collection.get('total_collections')} collections present) "
+            f"— nothing has been ingested to evaluate against"
+        )
     if chunks == 0:
         return "FAIL: no chunks retrieved — is the eval collection ingested?"
     if with_sitting == 0:

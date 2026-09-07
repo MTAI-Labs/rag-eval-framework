@@ -242,8 +242,35 @@ The remaining disagreements in the table are almost all ±1 — an answer that
 spans a page break puts its quoted phrase on the following page — plus a few
 short tokens that coincidentally match elsewhere in the document.
 
+**Regenerate them** — the measurement is reproducible, not hand-written:
+
+```bash
+rag-eval page-offsets --output datasets/hansard_pdfs/offsets.json
+rag-eval ingest --offsets datasets/hansard_pdfs/offsets.json
+```
+
+12 of 14 measure confidently (≥5 unambiguous matches, ≥60% agreement). The other
+two were **verified by hand against the PDF** and both agree with what the
+measurement found:
+
+| document | offset | how |
+|---|---|---|
+| `dn_2026-08-03` | 5 | ms. 1 is on PDF page 6 (its header is `DN 3.8.2026 7`, spaced, which the measurement's pattern missed) |
+| `dr_2004-06-14` | 12 | ms. 1 is on PDF page 13 — roman-numbered front matter (`i`…`ix`) precedes it |
+
+Record a hand-verified offset with `--set`; it lands in a `verified` block that
+survives re-measurement, always wins over the measured value, and is reported
+alongside whether the two agree:
+
+```bash
+rag-eval page-offsets --output datasets/hansard_pdfs/offsets.json \
+  --set dn_2026-08-03=5 --set dr_2004-06-14=12
+```
+
+All 14 documents now carry an offset.
+
 **Method caveat.** These offsets come from a stdlib PDF text reader, not a full
-PDF library; 17–29% of pages in these documents yield no extractable text, and
+PDF library; up to 29% of pages in some documents yield no extractable text, and
 those pages simply do not vote. Treat the offsets as well-evidenced, not
 certified. They are *not* recorded in `manifest.json` for that reason — a
 number a later check claims to have verified must be one we can actually
@@ -273,6 +300,37 @@ collection.
 
 Non-PDF files in the directory are ignored, including the `:Zone.Identifier`
 streams Windows leaves beside downloaded files. Those are safe to delete.
+
+## Embedding profile: `vl`
+
+The eval collection is built with the **`vl`** profile
+(`llama-nemotron-embed-vl-1b-v2`, multimodal, 2048 dims) rather than `text`,
+because Hansard PDFs carry tables and the `text` profile cannot see them.
+
+The trade is real and worth knowing before reading any scorecard:
+
+| | `text` | `vl` |
+|---|---|---|
+| model | llama-nemotron-embed-1b-v2 | llama-nemotron-embed-vl-1b-v2 |
+| multimodal | no | **yes** |
+| **reranker** | yes | **no** |
+| summaries | yes | no |
+| formats | pdf, docx, txt, pptx, md, html | pdf only |
+
+**The reranker does not apply to a `vl` collection.** The server has reranking
+enabled (`vdb_top_k` 100 → `reranker_top_k` 10), but the profile does not
+support it, so retrieval returns raw vector hits. Two consequences:
+
+- Absolute retrieval numbers will read lower than a reranked `text` collection
+  would produce. That is the pipeline, not a defect.
+- A `vl` run and a `text` run are **not comparable**. `embedding_profile` is in
+  the diff's invalidating set, so `rag-eval report` refuses to call the
+  difference a regression.
+
+The run environment records the *effective* reranker state
+(`reranker_enabled: false`, `reranker_configured: true`) rather than the
+server's toggle alone — a manifest claiming a reranker that never ran would be
+a false provenance record.
 
 ## Judge calibration set
 

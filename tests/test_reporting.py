@@ -120,7 +120,7 @@ def env_card(run_id: str, **env) -> dict:
     card["rag_environment"] = {
         "retrieval_mode": "dense",
         "embedding_model": "nvidia/llama-nemotron-embed-1b-v2",
-        "collection": "parliament-hansard-eval",
+        "collection": "parliament_hansard_eval",
         **env,
     }
     return card
@@ -135,6 +135,15 @@ def test_a_dense_to_hybrid_change_makes_the_diff_incomparable():
     assert diff["environment_drift"]["differences"] == [
         {"field": "retrieval_mode", "baseline": "dense", "current": "hybrid"}
     ]
+
+
+def test_switching_embedding_profile_makes_the_diff_incomparable():
+    # text -> vl is a different embedder and loses the reranker; the deltas
+    # measure a different pipeline, not a change to the same one.
+    diff = compare(env_card("b", embedding_profile="vl"),
+                   env_card("a", embedding_profile="text"))
+    assert diff["comparable"] is False
+    assert diff["environment_drift"]["differences"][0]["field"] == "embedding_profile"
 
 
 def test_a_changed_embedding_model_makes_the_diff_incomparable():

@@ -15,7 +15,7 @@ TanyaParlimen's production RAG.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"           # add ".[judge]" for the real judge panel
-cp .env.example .env              # fill in THOTH_BASE_URL, endpoints, keys
+cp .env.example .env              # THOTH_BASE_URL + the two NVIDIA endpoints
 
 rag-eval convert-golden           # TanyaParlimen QnA.xlsx -> datasets/golden_v1.jsonl
 rag-eval dataset-check            # golden set: schema + checksum
@@ -77,7 +77,9 @@ golden_v1.jsonl ──► run ──► traces.jsonl ──┬──► judge �
 | `convert-golden` | Workbook → versioned `golden_v1.jsonl` + checksummed manifest |
 | `dataset-check` | Validate a golden set's schema and checksum |
 | `corpus-check` | Verify `datasets/hansard_pdfs/` against its sha256 manifest |
-| `ingest-check` | Probe the collection: do chunks carry sitting id + page? |
+| `page-offsets` | Measure printed-`ms.` vs physical-page offset per document |
+| `ingest` | Create the eval collection (if absent) and upload the PDFs |
+| `ingest-check` | Does the collection exist, and do its chunks carry sitting id + page? |
 | `run` | Golden set → `traces.jsonl` (resumable, error-tolerant) |
 | `judge` | Traces → `judgments.jsonl` via the 3-model panel |
 | `score` | Traces + judgments → `scorecard.json` |

@@ -4,6 +4,8 @@ Stages are deliberately separate commands over one run directory:
 
     rag-eval convert-golden       Excel  -> versioned golden_v1.jsonl (+ manifest)
     rag-eval corpus-check         are the Hansard PDFs the ones we checksummed?
+    rag-eval page-offsets         measure printed-ms. vs physical-page offsets
+    rag-eval ingest               create the eval collection, then upload the PDFs
     rag-eval ingest-check         is the collection's metadata good enough to score?
     rag-eval run                  golden set -> traces.jsonl
     rag-eval judge                traces    -> judgments.jsonl
@@ -28,6 +30,8 @@ from typing import Any, Sequence
 from rag_eval import __version__
 from rag_eval.adapters import available, get_adapter
 from rag_eval.config import Config, load_config, load_dotenv
+from rag_eval.ingest import build_plan, execute as execute_ingest, reconcile
+from rag_eval.dataset.pageoffsets import measure_corpus, offsets_payload, read_verified
 from rag_eval.dataset.convert import convert_workbook
 from rag_eval.dataset.corpus import (
     DEFAULT_CORPUS_DIR,
@@ -292,6 +296,186 @@ def cmd_corpus_check(args: argparse.Namespace, config: Config) -> int:
         )
         _out(f"Full report -> {args.output}")
     return 0 if report.ok else 1
+
+
+def cmd_page_offsets(args: argparse.Namespace, config: Config) -> int:
+    """Measure each document's printed-vs-physical page offset.
+
+    Content-based: it locates golden answers in the PDF text and compares where
+    they land against the ``ms.`` the golden set records. Only measurements that
+    clear the confidence bar become offsets; the rest are reported as
+    undetermined rather than guessed at.
+    """
+    manifest = read_corpus_manifest(args.corpus_dir)
+    items = load_golden_set(args.dataset, verify_checksum=not args.no_verify_checksum)
+    results = measure_corpus(args.corpus_dir, manifest, items)
+
+    # A human who opened the PDF and read "ms. 1 is on page 6" outranks any
+    # text-matching heuristic. Existing verified entries are carried forward so
+    # re-running the measurement never discards them.
+    verified = read_verified(args.output) if args.output else {}
+    for pair in args.set or []:
+        key, _, value = pair.partition("=")
+        try:
+            verified[key.strip()] = int(value)
+        except ValueError:
+            _err(f"error: --set expects <sitting_id>=<integer>, got {pair!r}")
+            return 1
+
+    _out(f"{'document':<24}{'offset':>7}{'samples':>9}{'agree':>8}{'unread':>8}  note")
+    for r in results:
+        offset = str(r.offset) if r.confident else "—"
+        agree = f"{r.agreement:.0%}" if r.agreement is not None else "—"
+        _out(f"{r.filename:<24}{offset:>7}{r.samples:>9}{agree:>8}"
+             f"{r.pages_unreadable:>4}/{r.pages_total:<3} {r.note[:44]}")
+
+    payload = offsets_payload(results, verified)
+    _out(f"\n{sum(1 for r in results if r.confident)}/{len(results)} measured confidently"
+         + (f", {len(payload['verified'])} human-verified" if payload["verified"] else ""))
+    for sitting, value in payload["verified"].items():
+        row = next((e for e in payload["evidence"] if e["sitting_id"] == sitting), {})
+        agrees = row.get("agrees_with_measurement")
+        mark = ("agrees with measurement" if agrees
+                else "measurement said %s" % row.get("offset") if agrees is False
+                else "no measurement to compare")
+        _out(f"  verified {sitting} = {value}  ({mark})")
+    if payload["undetermined"]:
+        _out(f"undetermined: {', '.join(payload['undetermined'])}")
+        _out("  those documents are ingested without ms_offset — their chunks keep the "
+             "physical page_number and printed 'ms.' stays unrecoverable for them.")
+
+    if args.output:
+        Path(args.output).write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        _out(f"\nWrote {args.output}")
+        _out(f"Use it with: rag-eval ingest --offsets {args.output}")
+    else:
+        _out("\nPass --output <file> to write the offsets file.")
+    return 0
+
+
+def cmd_ingest(args: argparse.Namespace, config: Config) -> int:
+    """Create the eval collection and upload the Hansard corpus (D1).
+
+    Dry-run by default. This writes to shared infrastructure and a collection's
+    metadata schema cannot be changed after the fact, so the plan is printed for
+    a human to read before anything is created.
+    """
+    manifest = read_corpus_manifest(args.corpus_dir)
+    items = [] if args.no_golden_set else load_golden_set(
+        args.dataset, verify_checksum=not args.no_verify_checksum
+    )
+
+    report = verify_corpus(args.corpus_dir, manifest, items)
+    if not report.ok:
+        _err("error: the corpus does not match its manifest; fix that before ingesting")
+        for failure in report.failures:
+            _err(f"  FAIL  {failure}")
+        return 1
+
+    offsets = json.loads(Path(args.offsets).read_text(encoding="utf-8")) if args.offsets else {}
+    adapter = get_adapter("nvidia", **_adapter_options(config, args))
+    profile = args.embedding_profile or adapter.embedding_profile
+    plan = build_plan(
+        adapter.collection, args.corpus_dir, manifest, items,
+        offsets=offsets, embedding_profile=profile,
+    )
+
+    # One collection holds every Hansard PDF. Create it if missing, reuse it if
+    # present -- but only after confirming it can actually serve the eval.
+    status = adapter.collection_status()
+    existing_docs = adapter.list_documents() if status.get("exists") else []
+    plan = reconcile(plan, status, existing_docs, replace=args.replace)
+
+    _out(f"Ingest server   {adapter.ingest_base_url or '(NVIDIA_INGEST_BASE_URL not set)'}")
+    _out(f"Collection      {plan.collection}")
+    if status.get("checked"):
+        _out(f"  action        {plan.action.upper()}"
+             + (f" — already exists with {status.get('entities')} entities, "
+                f"{len(existing_docs)} document(s)" if status.get("exists") else " — does not exist yet"))
+    info = adapter._profile_info(plan.embedding_profile) or {}
+    caps = info.get("capabilities") or {}
+    _out(f"Embedding profile  {plan.embedding_profile}"
+         + (f"  — {info.get('label')}" if info else "  (unknown to the server)"))
+    if info:
+        _out(f"  multimodal {caps.get('multimodal')}   reranker {caps.get('reranker')}"
+             f"   summary {caps.get('summary')}   formats {','.join(caps.get('formats', []))}")
+        if caps.get("reranker") is False:
+            _out("  ! This profile does NOT support the reranker. The server has reranking "
+                 "on (top 100 -> 10), but it will not apply to this collection — retrieval "
+                 "returns raw vector hits. Scores are not comparable with a 'text' collection.")
+        if caps.get("summary") is False:
+            _out("  ! This profile does not support summaries.")
+        missing = [f for f in ("pdf",) if f not in (caps.get("formats") or [])]
+        if missing:
+            _out(f"  ! This profile does not accept {', '.join(missing)} — the corpus is PDFs.")
+    if plan.must_create:
+        _out(f"\nMetadata schema ({len(plan.metadata_schema)} field(s)) — "
+             f"NOT changeable after creation:")
+        for f in plan.metadata_schema:
+            req = "required" if f.get("required") else "optional"
+            _out(f"  {f['name']:<14}{f['type']:<9}{req:<9} {f.get('description','')[:60]}")
+    else:
+        _out(f"\nExisting metadata schema: "
+             f"{', '.join(status.get('metadata_fields') or []) or '(none)'}")
+
+    uploading = plan.to_upload
+    _out(f"\nDocuments: {len(plan.documents)} in the corpus, "
+         f"{len(uploading)} to upload ({plan.total_bytes / 1e6:.1f} MB)"
+         + (f", {len(plan.skipped)} already present" if plan.skipped else ""))
+    for d in plan.documents:
+        ms = d.metadata.get("ms_offset")
+        mark = "skip" if d.path.name in set(plan.skipped) else "  ->"
+        _out(f"  {mark} {d.path.name:<24}{d.sitting_id:<18}{d.golden_questions:>4} qs"
+             + (f"   ms_offset={ms}" if ms is not None else ""))
+    for problem in plan.problems:
+        _out(f"  ! {problem}")
+
+    if not offsets:
+        _out("\n  ! No --offsets supplied: chunks will carry nv-ingest's PHYSICAL page_number "
+             "with no way to recover the printed 'ms.' the golden set cites. "
+             "See datasets/README.md.")
+
+    if not uploading and not plan.problems:
+        _out(f"\nNothing to do — all {len(plan.documents)} document(s) are already in "
+             f"{plan.collection!r}. Pass --replace to re-upload them.")
+        return 0
+    if plan.problems and not args.force:
+        _err("\nerror: refusing to ingest with unresolved problems (pass --force to override)")
+        return 1
+
+    if not args.yes:
+        _out("\nDRY RUN — nothing was created or uploaded. Re-run with --yes to execute.")
+        return 0
+
+    _out("\nExecuting…")
+    for event in execute_ingest(adapter, plan, batch_size=args.batch_size,
+                                blocking=args.blocking):
+        stage = event["stage"]
+        if stage == "created":
+            _out(f"  collection created: {str(event['response'])[:120]}")
+        elif stage == "reused":
+            _out(f"  reusing existing collection {event['collection']!r}")
+        elif stage == "nothing-to-upload":
+            _out("  nothing to upload")
+        elif stage == "upload":
+            _out(f"  batch {event['batch']}/{event['of']}: {', '.join(event['files'])}")
+        elif stage == "uploaded":
+            r = event["response"] or {}
+            _out(f"    -> {r.get('message', 'ok')} "
+                 f"({r.get('documents_completed', '?')}/{r.get('total_documents', '?')})")
+            for failed in (r.get("failed_documents") or []):
+                _out(f"    !! failed: {failed}")
+    if args.output:
+        Path(args.output).write_text(
+            json.dumps({**plan.to_dict(), "executed": True,
+                        "collection_status_before": status}, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        _out(f"Ingest report -> {args.output}")
+    _out("\nNext: rag-eval ingest-check --adapter nvidia")
+    return 0
 
 
 def cmd_ingest_check(args: argparse.Namespace, config: Config) -> int:
@@ -766,6 +950,38 @@ def build_parser() -> argparse.ArgumentParser:
                    help="(re)generate the manifest from what is on disk")
     p.add_argument("--output", help="write the full report as JSON")
     p.set_defaults(func=cmd_corpus_check)
+
+    p = subparsers.add_parser(
+        "page-offsets", help="measure printed-ms. vs physical-page offset per document"
+    )
+    add_dataset_args(p)
+    p.add_argument("--corpus-dir", default=str(DEFAULT_CORPUS_DIR))
+    p.add_argument("--output", help="write the offsets JSON (for 'ingest --offsets')")
+    p.add_argument("--set", action="append", metavar="SITTING=OFFSET",
+                   help="record a human-verified offset; survives re-measurement (repeatable)")
+    p.set_defaults(func=cmd_page_offsets)
+
+    p = subparsers.add_parser(
+        "ingest", help="create the eval collection and upload the Hansard PDFs"
+    )
+    add_dataset_args(p)
+    p.add_argument("--corpus-dir", default=str(DEFAULT_CORPUS_DIR))
+    p.add_argument("--no-golden-set", action="store_true")
+    p.add_argument("--embedding-profile", default="",
+                   help="'vl' (multimodal) or 'text'; defaults to the adapter's setting")
+    p.add_argument("--offsets", metavar="FILE",
+                   help='JSON {"<sitting_id>": <ms_offset>} stamped onto each document')
+    p.add_argument("--batch-size", type=int, default=4)
+    p.add_argument("--blocking", action="store_true", help="wait for each batch to finish")
+    p.add_argument("--option", action="append", metavar="KEY=VALUE")
+    p.add_argument("--top-k", type=int, help=argparse.SUPPRESS)
+    p.add_argument("--output", help="write the ingest report as JSON")
+    p.add_argument("--replace", action="store_true",
+                   help="re-upload documents that are already in the collection")
+    p.add_argument("--force", action="store_true", help="ingest despite plan problems")
+    p.add_argument("--yes", action="store_true",
+                   help="actually create and upload (default is a dry run)")
+    p.set_defaults(func=cmd_ingest, adapter="nvidia")
 
     p = subparsers.add_parser(
         "ingest-check", help="verify the collection carries sitting id + page metadata"

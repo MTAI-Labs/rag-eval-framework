@@ -38,7 +38,15 @@ DEFAULT_EPSILON = 1e-9
 #: the same one -- a dense-only collection and a hybrid one score differently on
 #: identical vectors, and so do two different embedding models. Calling that a
 #: "regression" is the single easiest way for this framework to mislead someone.
-INVALIDATING_ENVIRONMENT = ("retrieval_mode", "embedding_model", "collection")
+INVALIDATING_ENVIRONMENT = (
+    "retrieval_mode",
+    "embedding_model",
+    "embedding_profile",   # text vs vl is a different embedder and a different pipeline
+    "collection",
+    "llm_model",         # a different generator moves every judge score
+    "reranker_model",
+    "reranker_enabled",  # toggling it reorders retrieval
+)
 
 #: Differences worth reporting that do not by themselves invalidate a diff.
 NOTABLE_ENVIRONMENT = ("base_url",)
@@ -156,7 +164,9 @@ def environment_drift(
         out = []
         for key in keys:
             a, b = was.get(key), now.get(key)
-            if a and b and a != b:
+            # `is not None` rather than truthiness: reranker_enabled going
+            # true -> false is exactly the change worth catching.
+            if a is not None and b is not None and a != "" and b != "" and a != b:
                 out.append({"field": key, "baseline": a, "current": b})
         return out
 
