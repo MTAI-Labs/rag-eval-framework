@@ -6,8 +6,18 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .env
+# datasets/hansards
 
 # Run artifacts are append-only local evidence, not source. Commit a scorecard
 # deliberately (git add -f) when it needs to be part of a review.
 runs/*/
 !runs/.gitkeep
+
+# The Hansard corpus is ~15 MB of source PDFs. The manifest is tracked instead:
+# it pins a sha256 per sitting, so 'rag-eval corpus-check' proves a local copy
+# is the same corpus a past scorecard was produced against.
+datasets/hansard_pdfs/*.pdf
+!datasets/hansard_pdfs/manifest.json
+
+# Provenance streams Windows writes beside downloaded files. Safe to delete.
+*:Zone.Identifier

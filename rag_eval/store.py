@@ -65,6 +65,10 @@ class RunManifest:
     dataset_count: int = 0
     questions_run: int = 0
     adapter_config: dict[str, Any] = field(default_factory=dict)
+    #: What the RAG stack actually reported at run time (see
+    #: RagAdapter.probe_environment). Distinct from adapter_config, which is
+    #: only what we asked for.
+    rag_environment: dict[str, Any] = field(default_factory=dict)
     judge_models: list[str] = field(default_factory=list)
     judge_usage: dict[str, Any] = field(default_factory=dict)
     config: dict[str, Any] = field(default_factory=dict)

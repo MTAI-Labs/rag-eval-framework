@@ -48,6 +48,22 @@ class RagAdapter(ABC):
         """Cheap reachability probe used by ``rag-eval ingest-check``."""
         return True, "no health check implemented"
 
+    def probe_environment(self) -> dict[str, Any]:
+        """What the RAG stack *actually is*, read from the service at run time.
+
+        ``describe()`` reports what we configured; this reports what is really
+        serving. The two diverge in ways that silently invalidate a comparison
+        -- a collection built dense-only vs. hybrid, or a stack whose recorded
+        embedding model is a stale label for the one it actually loads. Those
+        differences move scores without anything in the RAG changing, so they
+        belong in the manifest and in the run-over-run comparability check.
+
+        Best-effort by contract: an adapter that cannot determine a value
+        reports ``"unknown"`` rather than guessing, and a probe that fails must
+        never abort a run.
+        """
+        return {}
+
     def describe(self) -> dict[str, Any]:
         """Config captured into the run manifest (must not contain secrets)."""
         return {

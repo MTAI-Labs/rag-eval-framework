@@ -22,3 +22,13 @@ jobs:
       - run: pytest -q
       - name: golden set is intact
         run: rag-eval dataset-check
+      # The PDFs are gitignored (~15 MB), so a normal checkout has the manifest
+      # but no documents. Check them only where they have actually been fetched;
+      # wherever they are present, a mismatch fails the build.
+      - name: Hansard corpus is intact
+        run: |
+          if ls datasets/hansard_pdfs/*.pdf >/dev/null 2>&1; then
+            rag-eval corpus-check
+          else
+            echo "Hansard PDFs not in this checkout (gitignored) — skipping"
+          fi

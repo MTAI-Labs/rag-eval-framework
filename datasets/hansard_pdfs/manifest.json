@@ -1,0 +1,236 @@
+{
+  "directory": "datasets/hansard_pdfs",
+  "created_at": "2026-09-03T02:50:01+00:00",
+  "framework_version": "0.1.0",
+  "golden_set": "golden_v1.jsonl",
+  "golden_set_sha256": "138f682c731dbe10aca7157c1db4c34525029f0553eaf6be0b9d3fcd14051adf",
+  "document_count": 14,
+  "total_bytes": 14813978,
+  "notes": "Hansard sittings referenced by the golden set. Page counts are read from each PDF's page tree; 'ms.' references are printed page numbers and may be offset from physical PDF pages.",
+  "documents": {
+    "dn_2019-05-06": {
+      "filename": "dn_2019-05-06.pdf",
+      "sha256": "b65edeed3a621593e743541094e0fc431cfb1af35b699246470f15fe17fc411d",
+      "page_count": 117,
+      "doc_type": "dn",
+      "chamber": "Dewan Negara",
+      "sitting_date": "2019-05-06",
+      "bytes": 929434,
+      "pdf_version": "1.7",
+      "golden_questions": 6,
+      "referenced_pages": {
+        "count": 6,
+        "min": 1,
+        "max": 20
+      }
+    },
+    "dn_2020-09-22": {
+      "filename": "dn_2020-09-22.pdf",
+      "sha256": "352ec7d920006fbbf9b84ce49ec2e5ed6952a1229dc2c332c94bf1fda200e775",
+      "page_count": 111,
+      "doc_type": "dn",
+      "chamber": "Dewan Negara",
+      "sitting_date": "2020-09-22",
+      "bytes": 978609,
+      "pdf_version": "1.7",
+      "golden_questions": 30,
+      "referenced_pages": {
+        "count": 14,
+        "min": 1,
+        "max": 28
+      }
+    },
+    "dn_2026-02-26": {
+      "filename": "dn_2026-02-26.pdf",
+      "sha256": "2b9b3fd70fd9ff57d0c8363adf74d30170b64232f9602bcbc16ee53c842bed52",
+      "page_count": 124,
+      "doc_type": "dn",
+      "chamber": "Dewan Negara",
+      "sitting_date": "2026-02-26",
+      "bytes": 1641619,
+      "pdf_version": "1.7",
+      "golden_questions": 27,
+      "referenced_pages": {
+        "count": 20,
+        "min": 2,
+        "max": 79
+      }
+    },
+    "dn_2026-03-02": {
+      "filename": "dn_2026-03-02.pdf",
+      "sha256": "1a9bfec136d5fd8400df69b12803a6c2aa878e6ef170d9049af3ea741db5dbb6",
+      "page_count": 121,
+      "doc_type": "dn",
+      "chamber": "Dewan Negara",
+      "sitting_date": "2026-03-02",
+      "bytes": 1603324,
+      "pdf_version": "1.7",
+      "golden_questions": 5,
+      "referenced_pages": {
+        "count": 3,
+        "min": 11,
+        "max": 21
+      }
+    },
+    "dn_2026-07-20": {
+      "filename": "dn_2026-07-20.pdf",
+      "sha256": "08912950bcf7d8ef6c053590641492608b45cd8551ebb7e69c37a4d977605ec5",
+      "page_count": 127,
+      "doc_type": "dn",
+      "chamber": "Dewan Negara",
+      "sitting_date": "2026-07-20",
+      "bytes": 1066811,
+      "pdf_version": "1.7",
+      "golden_questions": 39,
+      "referenced_pages": {
+        "count": 15,
+        "min": 9,
+        "max": 30
+      }
+    },
+    "dn_2026-08-03": {
+      "filename": "dn_2026-08-03.pdf",
+      "sha256": "51aba207c623e9378163c92a281cced2a51ee77fad1b5cde4eae14237dd52301",
+      "page_count": 139,
+      "doc_type": "dn",
+      "chamber": "Dewan Negara",
+      "sitting_date": "2026-08-03",
+      "bytes": 1184530,
+      "pdf_version": "1.7",
+      "golden_questions": 9,
+      "referenced_pages": {
+        "count": 8,
+        "min": 3,
+        "max": 32
+      }
+    },
+    "dn_2026-08-04": {
+      "filename": "dn_2026-08-04.pdf",
+      "sha256": "0070628ce00b9dfb9638e1e268157bf1805ed3bcc98a735142775539d5b54ea8",
+      "page_count": 135,
+      "doc_type": "dn",
+      "chamber": "Dewan Negara",
+      "sitting_date": "2026-08-04",
+      "bytes": 1137971,
+      "pdf_version": "1.7",
+      "golden_questions": 56,
+      "referenced_pages": {
+        "count": 23,
+        "min": 2,
+        "max": 46
+      }
+    },
+    "dr_2004-06-14": {
+      "filename": "dr_2004-06-14.pdf",
+      "sha256": "f89454120c96a71dc4466ebd45d2b66835992068f41d886961675429399260ae",
+      "page_count": 126,
+      "doc_type": "dr",
+      "chamber": "Dewan Rakyat",
+      "sitting_date": "2004-06-14",
+      "bytes": 1044547,
+      "pdf_version": "1.4",
+      "golden_questions": 6,
+      "referenced_pages": {
+        "count": 6,
+        "min": 2,
+        "max": 64
+      }
+    },
+    "dr_2017-10-31": {
+      "filename": "dr_2017-10-31.pdf",
+      "sha256": "421a902580654fcd02c31b2ab2e82633ff6eeb0ecf1243abadd59dde724ee49e",
+      "page_count": 121,
+      "doc_type": "dr",
+      "chamber": "Dewan Rakyat",
+      "sitting_date": "2017-10-31",
+      "bytes": 1077290,
+      "pdf_version": "1.7",
+      "golden_questions": 8,
+      "referenced_pages": {
+        "count": 7,
+        "min": 3,
+        "max": 52
+      }
+    },
+    "dr_2026-03-02": {
+      "filename": "dr_2026-03-02.pdf",
+      "sha256": "de4b3bd48e50605bd5bc81bae79cf5c2a9e5a00fb039e8d46fa9ef82a2833e7b",
+      "page_count": 210,
+      "doc_type": "dr",
+      "chamber": "Dewan Rakyat",
+      "sitting_date": "2026-03-02",
+      "bytes": 1758612,
+      "pdf_version": "1.7",
+      "golden_questions": 23,
+      "referenced_pages": {
+        "count": 16,
+        "min": 10,
+        "max": 199
+      }
+    },
+    "dr_2026-06-22": {
+      "filename": "dr_2026-06-22.pdf",
+      "sha256": "c19dcc7d7d8c0394631ffb3e2e024a79edcdcf6d020399aa8bb40d309b67bd3f",
+      "page_count": 155,
+      "doc_type": "dr",
+      "chamber": "Dewan Rakyat",
+      "sitting_date": "2026-06-22",
+      "bytes": 1245440,
+      "pdf_version": "1.7",
+      "golden_questions": 40,
+      "referenced_pages": {
+        "count": 27,
+        "min": 3,
+        "max": 70
+      }
+    },
+    "kkdr_2026-07-14": {
+      "filename": "kkdr_2026-07-14.pdf",
+      "sha256": "fbff88fbe28eaf7a55ddecfd63ce0066a87717d41dc2e3d8269aa64415a11769",
+      "page_count": 22,
+      "doc_type": "kkdr",
+      "chamber": "Kamar Khas Dewan Rakyat",
+      "sitting_date": "2026-07-14",
+      "bytes": 370369,
+      "pdf_version": "1.7",
+      "golden_questions": 36,
+      "referenced_pages": {
+        "count": 10,
+        "min": 1,
+        "max": 10
+      }
+    },
+    "kkdr_2026-07-15": {
+      "filename": "kkdr_2026-07-15.pdf",
+      "sha256": "723184e62d5095642b83d63580f6916aa55de3616b43ba51d473da0003ef5703",
+      "page_count": 22,
+      "doc_type": "kkdr",
+      "chamber": "Kamar Khas Dewan Rakyat",
+      "sitting_date": "2026-07-15",
+      "bytes": 377354,
+      "pdf_version": "1.7",
+      "golden_questions": 35,
+      "referenced_pages": {
+        "count": 13,
+        "min": 2,
+        "max": 19
+      }
+    },
+    "kkdr_2026-07-16": {
+      "filename": "kkdr_2026-07-16.pdf",
+      "sha256": "cb4eca7152e7dafbdcf30260d4ff4baaf64a865f160970f3fe588e09dcd9701b",
+      "page_count": 23,
+      "doc_type": "kkdr",
+      "chamber": "Kamar Khas Dewan Rakyat",
+      "sitting_date": "2026-07-16",
+      "bytes": 398068,
+      "pdf_version": "1.7",
+      "golden_questions": 50,
+      "referenced_pages": {
+        "count": 21,
+        "min": 1,
+        "max": 21
+      }
+    }
+  }
+}

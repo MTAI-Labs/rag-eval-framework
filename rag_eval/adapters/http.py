@@ -44,6 +44,31 @@ def post_json(
     return json.loads(body) if body.strip() else {}
 
 
+def post_multipart(
+    url: str,
+    body: bytes,
+    content_type: str,
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: float = 600.0,
+) -> dict[str, Any]:
+    """POST a prebuilt multipart body. Ingestion is slow, hence the long default."""
+    request = urllib.request.Request(url, data=body, method="POST")
+    request.add_header("Content-Type", content_type)
+    request.add_header("Accept", "application/json")
+    for key, value in (headers or {}).items():
+        if value:
+            request.add_header(key, value)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            text = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:  # pragma: no cover - network path
+        raise HttpError(exc.code, exc.read().decode("utf-8", "replace"), url) from exc
+    except urllib.error.URLError as exc:  # pragma: no cover - network path
+        raise RuntimeError(f"cannot reach {url}: {exc.reason}") from exc
+    return json.loads(text) if text.strip() else {}
+
+
 def get_json(
     url: str, *, headers: dict[str, str] | None = None, timeout: float = 30.0
 ) -> Any:

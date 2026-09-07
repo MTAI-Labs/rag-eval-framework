@@ -18,10 +18,15 @@
   "adapters": {
     "nvidia": {
       "options": {
-        "collection": "parliament-hansard-eval",
+        "collection": "parliament_hansard_eval",
+        "embedding_profile": "vl",
         "top_k": 5,
+        "config_path": "/v1/configuration",
+        "collections_path": "/v1/collections",
         "sitting_fields": ["metadata.sitting_id", "metadata.source_id", "document_name"],
-        "page_fields": ["metadata.page_number", "metadata.page"],
+        "page_fields": ["metadata.page_number", "content_metadata.page_number"],
+        "dewan_fields": ["metadata.dewan", "content_metadata.dewan"],
+        "session_date_fields": ["metadata.session_date", "content_metadata.session_date"],
         "input_cost_per_1k": 0.0,
         "output_cost_per_1k": 0.0
       }

@@ -112,3 +112,87 @@ def test_html_escapes_content_from_the_rag_service():
     html = render(card)
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;" in html
+
+
+# -- environment drift: are these two runs even the same system? -----------
+def env_card(run_id: str, **env) -> dict:
+    card = scorecard(run_id)
+    card["rag_environment"] = {
+        "retrieval_mode": "dense",
+        "embedding_model": "nvidia/llama-nemotron-embed-1b-v2",
+        "collection": "parliament_hansard_eval",
+        **env,
+    }
+    return card
+
+
+def test_a_dense_to_hybrid_change_makes_the_diff_incomparable():
+    # Same vectors, different retrieval path. Reporting the delta as an
+    # improvement is the easiest way for this framework to mislead someone.
+    diff = compare(env_card("b", retrieval_mode="hybrid"), env_card("a"))
+
+    assert diff["comparable"] is False
+    assert diff["environment_drift"]["differences"] == [
+        {"field": "retrieval_mode", "baseline": "dense", "current": "hybrid"}
+    ]
+
+
+def test_switching_embedding_profile_makes_the_diff_incomparable():
+    # text -> vl is a different embedder and loses the reranker; the deltas
+    # measure a different pipeline, not a change to the same one.
+    diff = compare(env_card("b", embedding_profile="vl"),
+                   env_card("a", embedding_profile="text"))
+    assert diff["comparable"] is False
+    assert diff["environment_drift"]["differences"][0]["field"] == "embedding_profile"
+
+
+def test_a_changed_embedding_model_makes_the_diff_incomparable():
+    diff = compare(env_card("b", embedding_model="nvidia/llama-3.2-nv-embedqa-1b-v2"),
+                   env_card("a"))
+    assert diff["comparable"] is False
+    assert diff["environment_drift"]["differences"][0]["field"] == "embedding_model"
+
+
+def test_the_deltas_are_still_computed_when_incomparable():
+    # You want to see the numbers; you must not read them as a verdict.
+    current = env_card("b", retrieval_mode="hybrid")
+    current["retrieval"]["hit_rate@5"] = 0.95
+    diff = compare(current, env_card("a"))
+
+    row = next(r for r in diff["metrics"] if r["metric"] == "hit_rate@5")
+    assert row["delta"] is not None
+    assert diff["comparable"] is False
+
+
+def test_the_same_stack_stays_comparable():
+    diff = compare(env_card("b"), env_card("a"))
+    assert diff["comparable"] is True
+    assert diff["environment_drift"]["differences"] == []
+
+
+def test_a_moved_host_is_noted_but_not_invalidating():
+    # Same collection, model and retrieval path served from another box is
+    # still the same system.
+    diff = compare(env_card("b", base_url="http://rpgpu127:8081"),
+                   env_card("a", base_url="http://hgpu122:8081"))
+    assert diff["comparable"] is True
+    assert diff["environment_drift"]["notes"][0]["field"] == "base_url"
+
+
+def test_runs_without_environment_data_are_not_falsely_flagged():
+    # Older runs predate the probe; absence of evidence is not drift.
+    diff = compare(scorecard("b"), scorecard("a"))
+    assert diff["comparable"] is True
+    assert diff["environment_drift"]["checked"] is False
+
+
+def test_the_report_leads_with_incomparability():
+    current = env_card("b", retrieval_mode="hybrid")
+    current["headline"] = [
+        {"block": "retrieval", "metric": "hit_rate@5", "value": 0.95, "better": "higher"}
+    ]
+    html = render(current, compare(current, env_card("a")))
+
+    assert "not the same system" in html
+    # The banner must precede the headline numbers a reader sees first.
+    assert html.index("not the same system") < html.index("hit_rate@5")
