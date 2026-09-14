@@ -563,3 +563,17 @@ def test_a_plain_json_response_still_works(monkeypatch):
     assert trace.generated_answer == "an answer"
     assert trace.model == "google/gemma-4-31B-it"
     assert trace.retrieved_chunks[0].page == 3
+
+
+def test_sitting_is_derived_from_document_name_when_metadata_lacks_it(monkeypatch):
+    # /v1/search returns nv-ingest's own metadata without our custom fields, but
+    # carries document_name — and the corpus stores each sitting as
+    # <sitting_id>.pdf. Without this fallback every search chunk is unscoreable.
+    monkeypatch.setenv("NVIDIA_RAG_BASE_URL", "http://rtx6000.test:8081")
+    adapter = NvidiaRagAdapter()
+    bare = {"document_name": "dn_2026-02-26.pdf",
+            "metadata": {"page_number": 4}}
+    assert adapter._sitting_of(bare) == "dn_2026-02-26.pdf"   # normalised by make_chunk
+
+    # and with nothing usable at all, it must not guess
+    assert adapter._sitting_of({"metadata": {"page_number": 4}}) is None

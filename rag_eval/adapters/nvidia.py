@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from rag_eval.adapters.base import RagAdapter, dig
+from rag_eval.dataset.refs import normalise_sitting_id
 from rag_eval.adapters.http import HttpError, get_json, post_json, post_multipart, post_stream
 from rag_eval.adapters.multipart import encode as encode_multipart
 from rag_eval.types import RagTrace

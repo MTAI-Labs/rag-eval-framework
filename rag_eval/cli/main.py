@@ -7,6 +7,7 @@ Stages are deliberately separate commands over one run directory:
     rag-eval page-offsets         measure printed-ms. vs physical-page offsets
     rag-eval ingest               create the eval collection, then upload the PDFs
     rag-eval ingest-check         is the collection's metadata good enough to score?
+    rag-eval page-map-check       does a chunk's page actually mean the golden ms.?
     rag-eval run                  golden set -> traces.jsonl
     rag-eval judge                traces    -> judgments.jsonl
     rag-eval score                both      -> scorecard.json
@@ -32,6 +33,7 @@ from rag_eval.adapters import available, get_adapter
 from rag_eval.config import Config, load_config, load_dotenv
 from rag_eval.ingest import build_plan, execute as execute_ingest, reconcile
 from rag_eval.dataset.pageoffsets import measure_corpus, offsets_payload, read_verified
+from rag_eval import pagemap
 from rag_eval.dataset.convert import convert_workbook
 from rag_eval.dataset.corpus import (
     DEFAULT_CORPUS_DIR,
@@ -561,6 +563,50 @@ def cmd_ingest_status(args: argparse.Namespace, config: Config) -> int:
             why = failed.get("error_message", "") if isinstance(failed, dict) else ""
             _out(f"    !! FAILED {name}: {why[:160]}")
     return 0
+
+
+def cmd_page_map_check(args: argparse.Namespace, config: Config) -> int:
+    """Confirm a retrieved chunk's page maps back to the golden set's ms. value.
+
+    ingest-check proves a page number is present; this proves it means what the
+    golden set says. Only the second makes page_citation_accuracy meaningful.
+    """
+    items = _load_items(args)
+    offsets = {}
+    if args.offsets:
+        raw = json.loads(Path(args.offsets).read_text(encoding="utf-8"))
+        offsets = raw.get("offsets", raw) if isinstance(raw, dict) else {}
+    adapter = get_adapter(args.adapter, **_adapter_options(config, args))
+
+    def progress(index, total, r):
+        _out(f"  [{index}/{total}] {r.sitting_id:<18}{r.question_id:<12}"
+             f"header={str(r.header):>5} computed={str(r.computed):>5} "
+             f"excel={r.excel_ms:>4}  {r.verdict.upper()}"
+             + (f"  {r.note[:60]}" if r.note else ""))
+
+    with adapter:
+        report = pagemap.check(adapter, items, offsets, sample=args.sample,
+                               on_probe=None if args.quiet else progress)
+
+    _out(f"\n{'sitting':<20}{'qid':<13}{'header':>7}{'computed':>10}{'excel':>7}  verdict")
+    for r in report["results"]:
+        _out(f"{r['sitting_id']:<20}{r['question_id']:<13}{str(r['header']):>7}"
+             f"{str(r['computed']):>10}{r['excel_ms']:>7}  {r['verdict']}")
+
+    bases = report["observed_bases"]
+    if bases:
+        shown = ", ".join(f"{b} ({n}x)" for b, n in bases.items())
+        _out(f"\nobserved mapping: ms = page_number + BASE - ms_offset, BASE = {shown}")
+        if not report["base_consistent"]:
+            _out(f"  ! the assumed base is {report['assumed_base']}; the data disagrees. "
+                 f"page_citation_accuracy would be systematically wrong until this is settled.")
+    _out(f"\n{report['verdict']}")
+
+    if args.output:
+        Path(args.output).write_text(
+            json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        _out(f"Full report -> {args.output}")
+    return 0 if report["verdict"].startswith("PASS") else 1
 
 
 def cmd_ingest_check(args: argparse.Namespace, config: Config) -> int:
@@ -1093,6 +1139,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--option", action="append", metavar="KEY=VALUE")
     p.add_argument("--top-k", type=int, help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_ingest_status, adapter="nvidia")
+
+    p = subparsers.add_parser(
+        "page-map-check",
+        help="verify a retrieved chunk's page maps back to the golden set's ms.")
+    add_dataset_args(p)
+    add_adapter_args(p)
+    p.add_argument("--offsets", default="datasets/hansard_pdfs/offsets.json")
+    p.add_argument("--sample", type=int, default=5, help="sittings to probe")
+    p.add_argument("--quiet", action="store_true")
+    p.add_argument("--output", help="write the full report as JSON")
+    p.set_defaults(func=cmd_page_map_check)
 
     p = subparsers.add_parser(
         "ingest-check", help="verify the collection carries sitting id + page metadata"
