@@ -80,6 +80,8 @@ def ingest_check(
     items: Sequence[GoldenItem],
     *,
     sample: int = 10,
+    with_answer: bool = False,
+    on_probe=None,
 ) -> dict[str, object]:
     """Verify the ingested collection can support the retrieval metrics.
 
@@ -90,7 +92,17 @@ def ingest_check(
 
     Sampling deliberately spreads across *sittings*, not rows: a hundred
     questions from one well-ingested sitting proves nothing about the other 15.
+
+    Retrieval-only by default. This check asks whether chunks carry usable
+    metadata, and never looks at the generated answer -- so paying ~130s per
+    probe to make the LLM write one it discards is waste. ``with_answer``
+    exercises the full generate path when citation parsing is what is in doubt.
     """
+    probe_fn = (
+        adapter.answer
+        if with_answer or not hasattr(adapter, "retrieve")
+        else adapter.retrieve
+    )
     by_sitting: dict[str, list[GoldenItem]] = {}
     for item in items:
         if item.reference:
@@ -123,14 +135,21 @@ def ingest_check(
         "collection_status": collection,
         "golden_sittings": sorted(by_sitting),
         "probes": len(probes),
+        "mode": "answer" if probe_fn is adapter.answer else "retrieval-only",
         "probe_results": [],
     }
 
     chunks_total = with_sitting = with_page = 0
     seen_sittings: set[str] = set()
 
-    for item in probes:
-        trace = _answer_one(adapter, item)
+    for index, item in enumerate(probes, 1):
+        try:
+            trace = probe_fn(item.question, item.id)
+        except Exception as exc:  # noqa: BLE001
+            trace = RagTrace(question_id=item.id, question=item.question,
+                             adapter=adapter.name, error=f"{type(exc).__name__}: {exc}")
+        if on_probe:
+            on_probe(index, len(probes), item, trace)
         chunks = trace.retrieved_chunks
         chunks_total += len(chunks)
         with_sitting += sum(1 for c in chunks if c.sitting_id)

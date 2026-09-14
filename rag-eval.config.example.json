@@ -19,7 +19,7 @@
     "nvidia": {
       "options": {
         "collection": "parliament_hansard_eval",
-        "embedding_profile": "vl",
+        "embedding_profile": "text",
         "top_k": 5,
         "config_path": "/v1/configuration",
         "collections_path": "/v1/collections",

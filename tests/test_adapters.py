@@ -365,3 +365,201 @@ def test_the_profile_comes_from_the_environment(monkeypatch):
     monkeypatch.setenv("NVIDIA_RAG_EMBEDDING_PROFILE", "vl")
     assert NvidiaRagAdapter().embedding_profile == "vl"
     assert NvidiaRagAdapter(embedding_profile="text").embedding_profile == "text"
+
+
+def test_the_collection_name_is_a_valid_vector_db_identifier(monkeypatch):
+    # Milvus collection names must be [A-Za-z_][A-Za-z0-9_]* — a hyphenated name
+    # is rejected at creation, and every collection on the live stack (59 of
+    # them) uses underscores. Catching this here beats failing mid-ingest.
+    import re
+    monkeypatch.setenv("NVIDIA_RAG_BASE_URL", "http://rtx6000.test:8081")
+    monkeypatch.delenv("NVIDIA_RAG_COLLECTION", raising=False)
+
+    default = NvidiaRagAdapter().collection
+    assert default == "parliament_hansard_eval"
+    assert re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", default), default
+
+
+def test_post_multipart_retries_a_dropped_connection(monkeypatch):
+    # A long ingest holds one connection for many minutes; the far end closing
+    # it is not evidence the work failed, so dying on the first drop is wrong.
+    import http.client
+    import rag_eval.adapters.http as H
+
+    calls = {"n": 0}
+    class Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b'{"message":"ok"}'
+    def flaky(request, timeout=None):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise http.client.RemoteDisconnected("closed")
+        return Resp()
+    monkeypatch.setattr(H.urllib.request, "urlopen", flaky)
+    monkeypatch.setattr(H.time, "sleep", lambda s: None)
+
+    assert H.post_multipart("http://x/y", b"body", "multipart/form-data") == {"message": "ok"}
+    assert calls["n"] == 3
+
+
+def test_post_multipart_gives_up_with_a_clear_message(monkeypatch):
+    import http.client
+    import rag_eval.adapters.http as H
+    def always_drop(request, timeout=None):
+        raise http.client.RemoteDisconnected("closed")
+    monkeypatch.setattr(H.urllib.request, "urlopen", always_drop)
+    monkeypatch.setattr(H.time, "sleep", lambda s: None)
+
+    with pytest.raises(RuntimeError, match="transport failed after 3 attempt"):
+        H.post_multipart("http://x/y", b"body", "multipart/form-data")
+
+
+def test_an_http_error_is_not_retried(monkeypatch):
+    # A 4xx/5xx is a real answer from the server, not a transport blip.
+    import io
+    import rag_eval.adapters.http as H
+    calls = {"n": 0}
+    def bad(request, timeout=None):
+        calls["n"] += 1
+        raise H.urllib.error.HTTPError("http://x/y", 422, "Unprocessable", {}, io.BytesIO(b"nope"))
+    monkeypatch.setattr(H.urllib.request, "urlopen", bad)
+
+    with pytest.raises(H.HttpError):
+        H.post_multipart("http://x/y", b"body", "multipart/form-data")
+    assert calls["n"] == 1
+
+
+def test_an_empty_collection_list_means_absent_not_unverifiable(monkeypatch):
+    # A brand-new node legitimately has zero collections. Reading that as
+    # "could not verify" blocks the very first ingest onto any clean node.
+    monkeypatch.setenv("NVIDIA_RAG_BASE_URL", "http://rtx6000.test:8081")
+    monkeypatch.setenv("NVIDIA_INGEST_BASE_URL", "http://rtx6000.test:8082")
+    import rag_eval.adapters.nvidia as nv
+    monkeypatch.setattr(nv, "get_json", lambda url, **kw: {"collections": []})
+
+    status = nv.NvidiaRagAdapter().collection_status()
+    assert status["checked"] is True
+    assert status["exists"] is False
+    assert status["total_collections"] == 0
+
+
+def test_an_unreachable_ingest_server_is_still_unverifiable(monkeypatch):
+    monkeypatch.setenv("NVIDIA_RAG_BASE_URL", "http://rtx6000.test:8081")
+    monkeypatch.setenv("NVIDIA_INGEST_BASE_URL", "http://rtx6000.test:8082")
+    import rag_eval.adapters.nvidia as nv
+    def dead(url, **kw):
+        raise RuntimeError("connection refused")
+    monkeypatch.setattr(nv, "get_json", dead)
+
+    status = nv.NvidiaRagAdapter().collection_status()
+    assert status["checked"] is False
+    assert "did not answer" in status["reason"]
+
+
+def test_a_malformed_response_is_not_read_as_empty(monkeypatch):
+    monkeypatch.setenv("NVIDIA_RAG_BASE_URL", "http://rtx6000.test:8081")
+    monkeypatch.setenv("NVIDIA_INGEST_BASE_URL", "http://rtx6000.test:8082")
+    import rag_eval.adapters.nvidia as nv
+    monkeypatch.setattr(nv, "get_json", lambda url, **kw: {"unexpected": "shape"})
+
+    assert nv.NvidiaRagAdapter().collection_status()["checked"] is False
+
+
+# -- streamed generate responses -------------------------------------------
+def test_parse_sse_extracts_data_payloads():
+    from rag_eval.adapters.http import parse_sse
+    body = (
+        'data: {"a":1}\n\n'
+        ': keep-alive comment\n\n'
+        'data: {"a":2}\n\n'
+        'data: not json\n\n'
+        'data: [DONE]\n\n'
+    )
+    # A malformed event must not discard the rest of the stream.
+    assert parse_sse(body) == [{"a": 1}, {"a": 2}]
+
+
+def test_folding_concatenates_answer_deltas():
+    from rag_eval.adapters.nvidia import fold_sse_events
+    events = [
+        {"choices": [{"delta": {"content": "\n\nThe "}}], "object": "chat.completion.chunk"},
+        {"choices": [{"delta": {"content": "members "}}], "object": "chat.completion.chunk"},
+        {"choices": [{"delta": {"content": "resigned."}}], "object": "chat.completion.chunk"},
+    ]
+    folded = fold_sse_events(events)
+    assert folded["choices"][0]["message"]["content"] == "\n\nThe members resigned."
+
+
+def test_citations_survive_a_later_empty_event():
+    # The live server attaches citations to an early event and reports
+    # total_results: 0 on the last one. Taking the last event's citations
+    # throws away the entire retrieved context.
+    from rag_eval.adapters.nvidia import fold_sse_events
+    events = [
+        {"choices": [{"delta": {"content": "a"}}],
+         "citations": {"total_results": 8, "results": [{"content": "hansard text"}]},
+         "object": "chat.completion.chunk"},
+        {"choices": [{"delta": {"content": "b"}}],
+         "citations": {"total_results": 0, "results": []},
+         "object": "chat.completion.chunk"},
+    ]
+    folded = fold_sse_events(events)
+    assert folded["citations"]["total_results"] == 8
+    assert folded["citations"]["results"][0]["content"] == "hansard text"
+
+
+def test_folding_keeps_model_and_usage_from_whichever_event_carries_them():
+    from rag_eval.adapters.nvidia import fold_sse_events
+    events = [
+        {"choices": [{"delta": {"content": "x"}}], "model": "Qwen/Qwen3.6-27B",
+         "object": "chat.completion.chunk"},
+        {"choices": [{"delta": {"content": None}}],
+         "usage": {"prompt_tokens": 900, "completion_tokens": 40},
+         "object": "chat.completion.chunk"},
+    ]
+    folded = fold_sse_events(events)
+    assert folded["model"] == "Qwen/Qwen3.6-27B"
+    assert folded["usage"]["prompt_tokens"] == 900
+
+
+def test_a_streamed_response_produces_a_usable_trace(monkeypatch):
+    # End to end: SSE in, populated RagTrace out, with sitting and page intact.
+    monkeypatch.setenv("NVIDIA_RAG_BASE_URL", "http://rtx6000.test:8081")
+    import rag_eval.adapters.nvidia as nv
+    events = [
+        {"choices": [{"delta": {"content": "Pandan dan Setiawangsa."}}],
+         "citations": {"total_results": 1, "results": [
+             {"content": "…Pandan dan Setiawangsa…", "score": 0.8,
+              "metadata": {"dewan": "dewan rakyat", "session_date": "2026-06-22",
+                           "page_number": 9}}]},
+         "model": "Qwen/Qwen3.6-27B", "object": "chat.completion.chunk"},
+        {"choices": [{"delta": {"content": ""}}],
+         "citations": {"total_results": 0, "results": []},
+         "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+         "object": "chat.completion.chunk"},
+    ]
+    monkeypatch.setattr(nv, "post_stream", lambda *a, **k: (events, "text/event-stream; charset=utf-8"))
+    trace = nv.NvidiaRagAdapter().answer("Who resigned?", "q1")
+
+    assert trace.ok
+    assert trace.generated_answer == "Pandan dan Setiawangsa."
+    assert trace.model == "Qwen/Qwen3.6-27B"
+    assert len(trace.retrieved_chunks) == 1
+    assert trace.retrieved_chunks[0].sitting_id == "dr_2026-06-22"
+    assert trace.retrieved_chunks[0].page == 9
+
+
+def test_a_plain_json_response_still_works(monkeypatch):
+    # The RTX6000 path must be untouched by the streaming support.
+    monkeypatch.setenv("NVIDIA_RAG_BASE_URL", "http://rtx6000.test:8081")
+    import rag_eval.adapters.nvidia as nv
+    body = {"choices": [{"message": {"content": "an answer"}}],
+            "citations": {"results": [{"content": "…", "metadata": {"page_number": 3}}]},
+            "model": "google/gemma-4-31B-it"}
+    monkeypatch.setattr(nv, "post_stream", lambda *a, **k: ([body], "application/json"))
+    trace = nv.NvidiaRagAdapter().answer("q?", "q1")
+
+    assert trace.generated_answer == "an answer"
+    assert trace.model == "google/gemma-4-31B-it"
+    assert trace.retrieved_chunks[0].page == 3

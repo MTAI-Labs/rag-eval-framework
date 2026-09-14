@@ -385,7 +385,7 @@ def cmd_ingest(args: argparse.Namespace, config: Config) -> int:
     # One collection holds every Hansard PDF. Create it if missing, reuse it if
     # present -- but only after confirming it can actually serve the eval.
     status = adapter.collection_status()
-    existing_docs = adapter.list_documents() if status.get("exists") else []
+    existing_docs = adapter.document_states() if status.get("exists") else {}
     plan = reconcile(plan, status, existing_docs, replace=args.replace)
 
     _out(f"Ingest server   {adapter.ingest_base_url or '(NVIDIA_INGEST_BASE_URL not set)'}")
@@ -423,12 +423,17 @@ def cmd_ingest(args: argparse.Namespace, config: Config) -> int:
     uploading = plan.to_upload
     _out(f"\nDocuments: {len(plan.documents)} in the corpus, "
          f"{len(uploading)} to upload ({plan.total_bytes / 1e6:.1f} MB)"
-         + (f", {len(plan.skipped)} already present" if plan.skipped else ""))
+         + (f", {len(plan.skipped)} already present" if plan.skipped else "")
+         + (f", {len(plan.stale)} registered-but-empty (will re-upload)" if plan.stale else ""))
+    stale = set(plan.stale)
     for d in plan.documents:
         ms = d.metadata.get("ms_offset")
-        mark = "skip" if d.path.name in set(plan.skipped) else "  ->"
+        mark = ("EMPT" if d.path.name in stale
+                else "skip" if d.path.name in set(plan.skipped) else "  ->")
         _out(f"  {mark} {d.path.name:<24}{d.sitting_id:<18}{d.golden_questions:>4} qs"
              + (f"   ms_offset={ms}" if ms is not None else ""))
+    for warning in plan.warnings:
+        _out(f"  ~ {warning}")
     for problem in plan.problems:
         _out(f"  ! {problem}")
 
@@ -436,6 +441,35 @@ def cmd_ingest(args: argparse.Namespace, config: Config) -> int:
         _out("\n  ! No --offsets supplied: chunks will carry nv-ingest's PHYSICAL page_number "
              "with no way to recover the printed 'ms.' the golden set cites. "
              "See datasets/README.md.")
+
+    if args.reset and status.get("exists") and existing_docs:
+        names = sorted(existing_docs)
+        if not args.yes:
+            _out(f"\n--reset would DELETE {len(names)} document(s) from "
+                 f"{plan.collection!r}: {', '.join(names)}")
+        else:
+            _out(f"\nResetting: deleting {len(names)} document(s) from {plan.collection!r}…")
+            for n in names:
+                _out(f"  - {n} ({existing_docs[n]} elements)")
+            adapter.delete_documents(names)
+            remaining = adapter.document_states()
+            if remaining:
+                _err(f"error: {len(remaining)} document(s) still present after reset: "
+                     f"{sorted(remaining)}")
+                return 1
+            _out("  collection is now empty (the collection itself and its schema are kept)")
+            # Rebuild from scratch rather than re-reconciling the old plan:
+            # reconcile() appends problems, so the pre-reset warnings (stale
+            # documents that no longer exist) would otherwise still block the run.
+            plan = reconcile(
+                build_plan(adapter.collection, args.corpus_dir, manifest, items,
+                           offsets=offsets, embedding_profile=profile),
+                {**status, "exists": True, "metadata_fields":
+                    status.get("metadata_fields") or [f["name"] for f in plan.metadata_schema]},
+                {}, replace=args.replace,
+            )
+            uploading = plan.to_upload
+            _out(f"  {len(uploading)} document(s) to upload")
 
     if not uploading and not plan.problems:
         _out(f"\nNothing to do — all {len(plan.documents)} document(s) are already in "
@@ -450,11 +484,20 @@ def cmd_ingest(args: argparse.Namespace, config: Config) -> int:
         return 0
 
     _out("\nExecuting…")
+    task_ids: list[str] = []
+    unhealthy: list[dict[str, Any]] = []
     for event in execute_ingest(adapter, plan, batch_size=args.batch_size,
                                 blocking=args.blocking):
         stage = event["stage"]
         if stage == "created":
             _out(f"  collection created: {str(event['response'])[:120]}")
+        elif stage == "upload-error":
+            _out(f"    !! TRANSPORT FAILED {', '.join(event['files'])}: {event['error']}")
+            unhealthy.append({"document": ", ".join(event["files"]), "elements": 0,
+                              "page_count": None, "verdict": "upload-error"})
+        elif stage == "removing-stale":
+            _out(f"  removing {len(event['documents'])} empty shell(s) so they can be "
+                 f"re-uploaded: {', '.join(event['documents'])}")
         elif stage == "reused":
             _out(f"  reusing existing collection {event['collection']!r}")
         elif stage == "nothing-to-upload":
@@ -462,14 +505,38 @@ def cmd_ingest(args: argparse.Namespace, config: Config) -> int:
         elif stage == "upload":
             _out(f"  batch {event['batch']}/{event['of']}: {', '.join(event['files'])}")
         elif stage == "uploaded":
+            for h in event.get("health") or []:
+                mark = {"ok": "  ok ", "thin": " THIN", "empty": "EMPTY",
+                        "unknown": "  ? "}.get(h["verdict"], "  ? ")
+                _out(f"    [{mark}] {h['document']:<24}{h['elements']:>6} elements"
+                     f"  / {h['page_count']} pages"
+                     + (f"  = {h['elements_per_page']}/pg" if h["elements_per_page"] is not None else ""))
+                if h["verdict"] in ("empty", "thin"):
+                    unhealthy.append(h)
             r = event["response"] or {}
+            if event.get("task_id"):
+                task_ids.append(event["task_id"])
             _out(f"    -> {r.get('message', 'ok')} "
-                 f"({r.get('documents_completed', '?')}/{r.get('total_documents', '?')})")
+                 f"({r.get('documents_completed', '?')}/{r.get('total_documents', '?')})"
+                 + (f"  task {event['task_id']}" if event.get("task_id") else "  (no task id)"))
             for failed in (r.get("failed_documents") or []):
-                _out(f"    !! failed: {failed}")
+                name = failed.get("document_name", failed) if isinstance(failed, dict) else failed
+                why = failed.get("error_message", "") if isinstance(failed, dict) else ""
+                _out(f"    !! FAILED {name}: {why[:160]}")
+    if unhealthy:
+        _out(f"\n!! {len(unhealthy)} document(s) reported success but hold little or no "
+             f"content — nv-ingest's parse shim can drop a page silently:")
+        for h in unhealthy:
+            _out(f"     {h['document']:<24}{h['elements']} elements / {h['page_count']} pages")
+        _out("   Re-upload them (rag-eval ingest --replace) or raise the parse shim's "
+             "PARSE_MAX_NEW_TOKENS server-side; do NOT score against this collection yet.")
+    if task_ids:
+        _out(f"\nTask id(s): {', '.join(task_ids)}")
+        _out(f"  follow with: rag-eval ingest-status --task {task_ids[0]}")
     if args.output:
         Path(args.output).write_text(
-            json.dumps({**plan.to_dict(), "executed": True,
+            json.dumps({**plan.to_dict(), "executed": True, "task_ids": task_ids,
+                        "unhealthy": unhealthy,
                         "collection_status_before": status}, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
@@ -478,13 +545,42 @@ def cmd_ingest(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def cmd_ingest_status(args: argparse.Namespace, config: Config) -> int:
+    """Per-document ingestion progress for a task id."""
+    adapter = get_adapter("nvidia", **_adapter_options(config, args))
+    for task in args.task:
+        body = adapter.ingestion_status(task)
+        state = body.get("state", "?")
+        nv = body.get("nv_ingest_status") or {}
+        _out(f"task {task}  state={state}  extracted={nv.get('extraction_completed', '?')}")
+        for name, st in (nv.get("document_wise_status") or {}).items():
+            _out(f"    {name:<28}{st}")
+        result = body.get("result") or {}
+        for failed in (result.get("failed_documents") or []):
+            name = failed.get("document_name", failed) if isinstance(failed, dict) else failed
+            why = failed.get("error_message", "") if isinstance(failed, dict) else ""
+            _out(f"    !! FAILED {name}: {why[:160]}")
+    return 0
+
+
 def cmd_ingest_check(args: argparse.Namespace, config: Config) -> int:
     items = _load_items(args)
     adapter = get_adapter(args.adapter, **_adapter_options(config, args))
-    with adapter:
-        report = ingest_check(adapter, items, sample=args.sample)
 
-    _out(f"Adapter    {report['adapter']}")
+    def progress(index, total, item, trace):
+        mark = "!" if not trace.ok else " "
+        meta = sum(1 for c in trace.retrieved_chunks if c.sitting_id and c.page is not None)
+        _out(f"  [{index:>2}/{total}] {mark} {item.id:<12}"
+             f"{len(trace.retrieved_chunks):>3} chunks, {meta} with metadata"
+             f"  {(trace.latency_ms or 0) / 1000:.1f}s"
+             + (f"  {trace.error[:60]}" if trace.error else ""))
+
+    with adapter:
+        report = ingest_check(adapter, items, sample=args.sample,
+                              with_answer=args.with_answer,
+                              on_probe=None if args.quiet else progress)
+
+    _out(f"\nAdapter    {report['adapter']}  ({report['mode']})")
     _out(f"Health     {report['health']}")
     _out(f"Probes     {report['probes']} question(s) across {len(report['golden_sittings'])} sitting(s)")
     _out(f"Chunks     {report['chunks_retrieved']} retrieved")
@@ -971,11 +1067,20 @@ def build_parser() -> argparse.ArgumentParser:
                    help="'vl' (multimodal) or 'text'; defaults to the adapter's setting")
     p.add_argument("--offsets", metavar="FILE",
                    help='JSON {"<sitting_id>": <ms_offset>} stamped onto each document')
-    p.add_argument("--batch-size", type=int, default=4)
-    p.add_argument("--blocking", action="store_true", help="wait for each batch to finish")
+    # Serialized by default: this stack drops results when many documents are
+    # submitted at once (14 concurrent -> 12 lost with 404s fetching results),
+    # and a non-blocking upload reports success for work that later fails.
+    p.add_argument("--batch-size", type=int, default=1)
+    p.add_argument("--no-blocking", dest="blocking", action="store_false",
+                   help="fire-and-forget instead of waiting for each batch "
+                        "(faster, but this stack loses documents under load)")
+    p.set_defaults(blocking=True)
     p.add_argument("--option", action="append", metavar="KEY=VALUE")
     p.add_argument("--top-k", type=int, help=argparse.SUPPRESS)
     p.add_argument("--output", help="write the ingest report as JSON")
+    p.add_argument("--reset", action="store_true",
+                   help="delete every document in the collection first (keeps the collection "
+                        "and its schema); use to re-ingest from clean")
     p.add_argument("--replace", action="store_true",
                    help="re-upload documents that are already in the collection")
     p.add_argument("--force", action="store_true", help="ingest despite plan problems")
@@ -983,12 +1088,22 @@ def build_parser() -> argparse.ArgumentParser:
                    help="actually create and upload (default is a dry run)")
     p.set_defaults(func=cmd_ingest, adapter="nvidia")
 
+    p = subparsers.add_parser("ingest-status", help="per-document progress for an ingest task")
+    p.add_argument("--task", action="append", required=True, metavar="TASK_ID")
+    p.add_argument("--option", action="append", metavar="KEY=VALUE")
+    p.add_argument("--top-k", type=int, help=argparse.SUPPRESS)
+    p.set_defaults(func=cmd_ingest_status, adapter="nvidia")
+
     p = subparsers.add_parser(
         "ingest-check", help="verify the collection carries sitting id + page metadata"
     )
     add_dataset_args(p)
     add_adapter_args(p)
     p.add_argument("--sample", type=int, default=10, help="probe questions, spread across sittings")
+    p.add_argument("--with-answer", action="store_true",
+                   help="probe via the full generate path (slow: the LLM writes an answer "
+                        "this check discards) instead of retrieval only")
+    p.add_argument("--quiet", action="store_true", help="suppress per-probe progress")
     p.add_argument("--output", help="write the full report as JSON")
     p.set_defaults(func=cmd_ingest_check)
 
