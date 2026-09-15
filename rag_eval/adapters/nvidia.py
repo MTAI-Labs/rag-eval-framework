@@ -15,11 +15,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import urllib.request
 from pathlib import Path
 from typing import Any, Sequence
 
 from rag_eval.adapters.base import RagAdapter, dig
-from rag_eval.adapters.http import HttpError, get_json, post_json, post_multipart
+from rag_eval.dataset.refs import normalise_sitting_id
+from rag_eval.adapters.http import HttpError, get_json, post_json, post_multipart, post_stream
 from rag_eval.adapters.multipart import encode as encode_multipart
 from rag_eval.types import RagTrace
 
@@ -54,7 +56,8 @@ DEFAULTS = {
     "dewan_fields": ["metadata.dewan", "content_metadata.dewan", "dewan"],
     "session_date_fields": ["metadata.session_date", "content_metadata.session_date",
                             "session_date"],
-    "filename_fields": ["metadata.filename", "content_metadata.filename", "filename"],
+    "filename_fields": ["metadata.filename", "content_metadata.filename", "filename",
+                        "document_name"],
     "prompt_tokens_field": "usage.prompt_tokens",
     "completion_tokens_field": "usage.completion_tokens",
     "model_field": "model",
@@ -126,13 +129,65 @@ class NvidiaRagAdapter(RagAdapter):
         url = f"{self.base_url}{self.settings['generate_path']}"
         try:
             with self.timer() as sw:
-                body = post_json(url, payload, headers=self._headers(), timeout=self.timeout)
-        except (HttpError, RuntimeError) as exc:
+                # The server may answer with Server-Sent Events even though the
+                # request says stream=false, so the response shape is decided by
+                # what comes back rather than by what we asked for.
+                events, content_type = post_stream(
+                    url, payload, headers=self._headers(), timeout=self.timeout
+                )
+        except (HttpError, RuntimeError, ValueError) as exc:
             trace.error = str(exc)
             return trace
 
         trace.latency_ms = sw.elapsed_ms
+        if "text/event-stream" in content_type:
+            body = fold_sse_events(events)
+        else:
+            body = events[0] if events else {}
         return self._populate(trace, body)
+
+    def retrieve(self, question: str, question_id: str = "") -> RagTrace:
+        """Retrieval only -- no generation.
+
+        ``/v1/search`` returns the same chunks the generate path retrieves, in
+        ~0.3s rather than ~130s, because it skips the LLM. Anything that only
+        needs to know *what was retrieved* -- ingest-check, metadata audits --
+        should use this rather than paying for an answer it discards.
+        """
+        trace = self._trace(question, question_id)
+        payload: dict[str, Any] = {
+            "query": question,
+            "collection_names": [self.collection],
+            "top_k": self.top_k,
+            "enable_reranker": bool(self.options.get("enable_reranker", True)),
+        }
+        url = f"{self.base_url}{self.settings['search_path']}"
+        try:
+            with self.timer() as sw:
+                body = post_json(url, payload, headers=self._headers(), timeout=self.timeout)
+        except (HttpError, RuntimeError, ValueError) as exc:
+            trace.error = str(exc)
+            return trace
+
+        trace.latency_ms = sw.elapsed_ms
+        s = self.settings
+        results = body.get("results") or body.get("chunks") or []
+        trace.retrieved_chunks = [
+            self.make_chunk(
+                rank=i + 1,
+                text=str(dig(c, s["chunk_text_field"], "") or c.get("content", "") or ""),
+                chunk_id=str(dig(c, s["chunk_id_field"], "") or c.get("document_id", "") or ""),
+                score=_as_float(c.get("score")),
+                sitting_id=self._sitting_of(c),
+                page=_first(c, s["page_fields"]),
+                metadata=c.get("metadata", {}) if isinstance(c, dict) else {},
+            )
+            for i, c in enumerate(results)
+        ]
+        trace.cited_sources = self.citations_from_chunks(trace.retrieved_chunks)
+        if not trace.retrieved_chunks:
+            trace.error = "search returned no results"
+        return trace
 
     def health(self) -> tuple[bool, str]:
         url = f"{self.base_url}{self.settings['health_path']}"
@@ -277,18 +332,26 @@ class NvidiaRagAdapter(RagAdapter):
     def _profile_info(self, name: str) -> dict[str, Any] | None:
         return next((p for p in self.embedding_profiles() if p.get("name") == name), None)
 
-    def list_collections(self) -> list[dict[str, Any]]:
-        """Collections on the ingest server. Empty list if it cannot be reached."""
+    def list_collections(self) -> tuple[list[dict[str, Any]], bool]:
+        """``(collections, reachable)`` from the ingest server.
+
+        The flag matters: "the server answered with no collections" and "the
+        server did not answer" are different facts. Collapsing them makes a
+        brand-new node -- which legitimately has zero collections -- look
+        unverifiable, and blocks the first ingest onto it.
+        """
         if not self.ingest_base_url:
-            return []
+            return [], False
         try:
             body = get_json(
                 f"{self.ingest_base_url}{self.settings['collections_path']}",
                 headers=self._headers(), timeout=30.0,
             ) or {}
         except Exception:  # noqa: BLE001
-            return []
-        return body.get("collections", []) if isinstance(body, dict) else []
+            return [], False
+        if not isinstance(body, dict) or "collections" not in body:
+            return [], False
+        return body.get("collections") or [], True
 
     # -- ingestion (writes) ------------------------------------------------
     # The vector DB will not accept documents for a collection that does not
@@ -328,7 +391,7 @@ class NvidiaRagAdapter(RagAdapter):
         files: Sequence[tuple[Path, dict[str, Any]]],
         *,
         blocking: bool = False,
-        timeout: float = 1800.0,
+        timeout: float = 3600.0,
     ) -> dict[str, Any]:
         """Upload PDFs with per-document custom metadata.
 
@@ -353,14 +416,16 @@ class NvidiaRagAdapter(RagAdapter):
             body, ctype, headers=self._headers(), timeout=timeout,
         )
 
-    def list_documents(self) -> list[str]:
-        """Document names already in the collection. Empty if it cannot be read.
+    def document_states(self) -> dict[str, int]:
+        """``{document_name: element_count}`` for the collection.
 
-        Uploading a PDF that is already there duplicates its chunks, which
-        quietly inflates retrieval and makes a re-run non-reproducible.
+        The element count matters as much as the name. A failed ingest can leave
+        a document *registered with zero elements* -- present by name, holding
+        nothing. Treating that as "already uploaded" silently drops it from the
+        corpus, so callers need the count to tell a real document from a shell.
         """
         if not self.ingest_base_url:
-            return []
+            return {}
         try:
             body = get_json(
                 f"{self.ingest_base_url}{self.settings['documents_path']}"
@@ -368,12 +433,37 @@ class NvidiaRagAdapter(RagAdapter):
                 headers=self._headers(), timeout=60.0,
             ) or {}
         except Exception:  # noqa: BLE001
-            return []
-        docs = body.get("documents", []) if isinstance(body, dict) else []
-        return [
-            d.get("document_name", "") if isinstance(d, dict) else str(d)
-            for d in docs
-        ]
+            return {}
+        out: dict[str, int] = {}
+        for d in (body.get("documents", []) if isinstance(body, dict) else []):
+            if not isinstance(d, dict):
+                out[str(d)] = -1          # unknown shape: assume usable
+                continue
+            info = d.get("document_info") or {}
+            out[d.get("document_name", "")] = int(info.get("total_elements") or 0)
+        out.pop("", None)
+        return out
+
+    def list_documents(self) -> list[str]:
+        """Document names in the collection, regardless of whether they hold anything."""
+        return sorted(self.document_states())
+
+    def delete_documents(self, names: Sequence[str]) -> dict[str, Any]:
+        """Remove documents from the collection (the collection itself stays)."""
+        if not self.ingest_base_url:
+            raise ValueError("NVIDIA_INGEST_BASE_URL is not set; cannot delete documents")
+        url = (f"{self.ingest_base_url}{self.settings['documents_path']}"
+               f"?collection_name={self.collection}")
+        request = urllib.request.Request(
+            url, data=json.dumps(list(names)).encode("utf-8"), method="DELETE"
+        )
+        request.add_header("Content-Type", "application/json")
+        request.add_header("Accept", "application/json")
+        for key, value in self._headers().items():
+            request.add_header(key, value)
+        with urllib.request.urlopen(request, timeout=300.0) as response:
+            text = response.read().decode("utf-8")
+        return json.loads(text) if text.strip() else {}
 
     def ingestion_status(self, task_id: str = "") -> dict[str, Any]:
         """Poll a running ingestion task."""
@@ -395,9 +485,10 @@ class NvidiaRagAdapter(RagAdapter):
         """
         if not self.ingest_base_url:
             return {"checked": False, "reason": "NVIDIA_INGEST_BASE_URL is not set"}
-        collections = self.list_collections()
-        if not collections:
-            return {"checked": False, "reason": f"no collections listed at {self.ingest_base_url}"}
+        collections, reachable = self.list_collections()
+        if not reachable:
+            return {"checked": False,
+                    "reason": f"ingest server did not answer at {self.ingest_base_url}"}
         found = next(
             (c for c in collections if c.get("collection_name") == self.collection), None
         )
@@ -427,12 +518,16 @@ class NvidiaRagAdapter(RagAdapter):
 
         dewan = _first(chunk, self.settings.get("dewan_fields", []))
         date = _first(chunk, self.settings.get("session_date_fields", []))
-        if not (dewan and date):
-            return None
-        prefix = DEWAN_PREFIXES.get(str(dewan).strip().lower())
-        if not prefix:
-            return None
-        return f"{prefix}_{str(date).strip()}"
+        if dewan and date:
+            prefix = DEWAN_PREFIXES.get(str(dewan).strip().lower())
+            if prefix:
+                return f"{prefix}_{str(date).strip()}"
+
+        # /v1/search returns nv-ingest's own metadata without our custom fields,
+        # but it does carry document_name -- and the corpus stores each sitting
+        # as <sitting_id>.pdf, so the filename is the sitting id.
+        filename = _first(chunk, self.settings.get("filename_fields", []))
+        return normalise_sitting_id(filename) if filename else None
 
     def metadata_coverage(self, trace: RagTrace) -> dict[str, Any]:
         """How much of the retrieved set carries scoreable Hansard metadata."""
@@ -444,6 +539,55 @@ class NvidiaRagAdapter(RagAdapter):
             "with_page": sum(1 for c in chunks if c.page is not None),
             "sittings": sorted({c.sitting_id for c in chunks if c.sitting_id}),
         }
+
+
+def fold_sse_events(events: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Collapse a streamed generate response into the non-streaming shape.
+
+    The stream is not uniform, and two details matter:
+
+    * The answer arrives as ``choices[0].delta.content`` fragments; any single
+      event's ``message.content`` holds only one fragment.
+    * Citations are attached to an early event and the *final* event reports
+      ``total_results: 0``. Taking the last event's citations therefore discards
+      the retrieved context entirely, so the first non-empty set wins.
+
+    The result uses the same keys as a non-streaming reply, so the field paths
+    in DEFAULTS and ``_populate`` need no special cases.
+    """
+    parts: list[str] = []
+    citations: dict[str, Any] | None = None
+    model = ""
+    usage: dict[str, Any] = {}
+    metrics: dict[str, Any] = {}
+
+    for event in events:
+        choices = event.get("choices") or []
+        first = choices[0] if choices else {}
+        delta = (first.get("delta") or {}).get("content")
+        if delta:
+            parts.append(str(delta))
+        elif not parts:
+            # Some servers send the whole answer once, on message rather than delta.
+            whole = (first.get("message") or {}).get("content")
+            if whole and len(choices) == 1 and not event.get("object", "").endswith("chunk"):
+                parts.append(str(whole))
+
+        cited = event.get("citations") or {}
+        if citations is None and (cited.get("results") or []):
+            citations = cited
+
+        model = event.get("model") or model
+        usage = event.get("usage") or usage
+        metrics = event.get("metrics") or metrics
+
+    return {
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": "".join(parts)}}],
+        "citations": citations or {"total_results": 0, "results": []},
+        "model": model,
+        "usage": usage,
+        "metrics": metrics,
+    }
 
 
 def _model_from_label(label: str) -> str:
