@@ -21,6 +21,7 @@ rag-eval convert-golden           # TanyaParlimen QnA.xlsx -> datasets/golden_v1
 rag-eval dataset-check            # golden set: schema + checksum
 rag-eval corpus-check             # Hansard PDFs: sha256, page counts, coverage
 rag-eval ingest-check --adapter nvidia   # is the collection scoreable at all?
+rag-eval page-map-check --adapter nvidia # does a chunk's page mean the golden ms.?
 rag-eval eval --adapter nvidia    # run + judge + score + report
 ```
 
@@ -80,6 +81,7 @@ golden_v1.jsonl ──► run ──► traces.jsonl ──┬──► judge �
 | `page-offsets` | Measure printed-`ms.` vs physical-page offset per document |
 | `ingest` | Create the eval collection (if absent) and upload the PDFs |
 | `ingest-check` | Does the collection exist, and do its chunks carry sitting id + page? |
+| `page-map-check` | Does a retrieved chunk's page actually *mean* the golden set's `ms.`? |
 | `run` | Golden set → `traces.jsonl` (resumable, error-tolerant) |
 | `judge` | Traces → `judgments.jsonl` via the 3-model panel |
 | `score` | Traces + judgments → `scorecard.json` |
@@ -120,6 +122,10 @@ Two rules that change how the numbers read:
    **ingestion** defect, not a retrieval failure, so `metadata_health` reports it
    separately and the scorecard raises a warning below 95% coverage. Check
    `ingest-check` before believing a bad hit-rate.
+3. `recall@k` and `page_citation_accuracy` compare a chunk's page against the
+   Excel `ms.` — and those are **different numbers**. `ms.` is the page printed
+   on the page; the chunk carries nv-ingest's physical page index. Run
+   `page-map-check` to confirm the mapping holds before trusting either metric.
 
 **Generation** — from the judge panel: `faithfulness`, `correctness`,
 `completeness`, `citation_accuracy` (1–5 each), plus `hallucination_rate`
@@ -224,6 +230,49 @@ only be rebuilt when pandas and openpyxl happen to be installed is a framework
 that stops being rebuildable; the `.xlsx` reader is ~60 lines of `zipfile` and
 `ElementTree`. Only the real judge panel needs a dependency (`openai`), so the
 CI smoke test runs the whole pipeline with no GPU, network or gateway key.
+
+## Verifying the page mapping
+
+`ingest-check` proves a chunk *carries* a page number. `page-map-check` proves
+that number *means* what the golden set says — a different claim, and the one
+`page_citation_accuracy` actually rests on.
+
+```bash
+rag-eval page-map-check --adapter nvidia --sample 14 \
+  --offsets datasets/hansard_pdfs/offsets.json
+```
+
+It retrieves for a golden question and compares three independent values:
+
+| source | |
+|---|---|
+| **header** | the printed page read out of the chunk's own running header (`DN 4.8.2026 129`) — ground truth |
+| **computed** | `page_number + 1 - ms_offset`, what our arithmetic predicts |
+| **excel** | the `ms.` the golden set records |
+
+`header` vs `computed` tests the formula, including whether nv-ingest's
+`page_number` is 0-based. `header` vs `excel` tests the golden set itself. They
+fail differently, so the verdicts are separate — `formula-mismatch` means our
+offset is wrong, `golden-mismatch` means the Excel reference is.
+
+The base is **derived, not assumed**: the report states the mapping the data
+implies, and warns if it disagrees with the one in use.
+
+```
+observed mapping: ms = page_number + BASE - ms_offset, BASE = 1 (4x)
+PASS: 4/4 comparable probe(s) map correctly
+```
+
+**`no-header` is not a failure.** The running header sits at the top of a page,
+and each page becomes ~3.4 chunks, so roughly 70% of retrieved chunks are
+mid-page prose with no header to read. Those probes are unverifiable rather
+than wrong. Raise `--sample` to get more comparable probes.
+
+A retrieval miss reports `no-hit` — that is a statement about retrieval, not
+about page mapping, and is not counted as a mismatch.
+
+Re-run this after **every** re-ingest, including a migration to another cluster:
+the offsets are per-document and the page base is a property of the ingestor.
 
 ## Data integrity
 
