@@ -63,7 +63,9 @@ class TanyaParlimenAdapter(RagAdapter):
         try:
             with self.timer() as sw:
                 body = post_json(url, payload, headers=self._headers(), timeout=self.timeout)
-        except (HttpError, RuntimeError) as exc:
+        except (HttpError, RuntimeError, ValueError) as exc:
+            # ValueError covers a 200 whose body is not JSON — a broken service
+            # must produce an error trace, never take down the run.
             trace.error = str(exc)
             return trace
 

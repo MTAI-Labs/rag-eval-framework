@@ -8,6 +8,7 @@ Stages are deliberately separate commands over one run directory:
     rag-eval ingest               create the eval collection, then upload the PDFs
     rag-eval ingest-check         is the collection's metadata good enough to score?
     rag-eval page-map-check       does a chunk's page actually mean the golden ms.?
+    rag-eval smoke                a few real questions through an adapter, end to end
     rag-eval run                  golden set -> traces.jsonl
     rag-eval judge                traces    -> judgments.jsonl
     rag-eval score                both      -> scorecard.json
@@ -62,7 +63,7 @@ from rag_eval.judges.client import build_client
 from rag_eval.judges.panel import JudgePanel, PanelUsage, flagged_rows
 from rag_eval.metrics.scorecard import build_scorecard
 from rag_eval.reporting import compare, write_report
-from rag_eval.runner import ingest_check, run_dataset
+from rag_eval.runner import _answer_one, ingest_check, run_dataset
 from rag_eval.store import RunManifest, RunStore, list_runs, previous_run
 from rag_eval.types import GoldenItem, RagTrace
 
@@ -661,6 +662,87 @@ def _probe_environment(adapter: Any) -> dict[str, Any]:
     return env
 
 
+def cmd_smoke(args: argparse.Namespace, config: Config) -> int:
+    """Put a handful of golden questions through an adapter against a live service.
+
+    The contract suite proves an adapter behaves correctly against a stub; this
+    proves the real endpoint is reachable, configured and returning something
+    usable. Deliberately small -- it is a wiring check before committing to a
+    371-question run, not an evaluation.
+    """
+    items = _load_items(args)
+    probes = items[: args.sample] if args.ids else _spread(items, args.sample)
+    adapter = get_adapter(args.adapter, **_adapter_options(config, args))
+
+    _out(f"Adapter     {args.adapter}")
+    _out(f"Questions   {len(probes)}")
+    try:
+        healthy, message = adapter.health()
+        _out(f"Health      {'ok' if healthy else 'UNHEALTHY'}  {message[:90]}")
+    except Exception as exc:  # noqa: BLE001
+        _out(f"Health      unavailable: {type(exc).__name__}: {exc}"[:110])
+    _out("")
+
+    traces: list[RagTrace] = []
+    with adapter:
+        for index, item in enumerate(probes, 1):
+            trace = _answer_one(adapter, item)
+            traces.append(trace)
+            meta = sum(1 for c in trace.retrieved_chunks
+                       if c.sitting_id and c.page is not None)
+            gold = item.reference.sitting_id if item.reference else "-"
+            hit = any(c.sitting_id == gold for c in trace.retrieved_chunks)
+            _out(f"  [{index}/{len(probes)}] {item.id:<13}"
+                 f"{len(trace.retrieved_chunks):>3} chunks ({meta} with metadata)"
+                 f"  {(trace.latency_ms or 0) / 1000:6.1f}s"
+                 f"  gold={gold:<18}{'HIT ' if hit else 'miss'}"
+                 + (f"  ERROR {trace.error[:70]}" if trace.error else ""))
+
+    failed = [t for t in traces if not t.ok]
+    answered = [t for t in traces if t.ok and t.generated_answer.strip()]
+    with_meta = sum(1 for t in traces
+                    for c in t.retrieved_chunks if c.sitting_id and c.page is not None)
+    chunks = sum(len(t.retrieved_chunks) for t in traces)
+
+    _out(f"\n  succeeded    {len(traces) - len(failed)}/{len(traces)}")
+    _out(f"  answered     {len(answered)}/{len(traces)}")
+    _out(f"  chunks       {chunks} ({with_meta} carry sitting id + page)")
+    if failed:
+        _out(f"  failures     {len(failed)}")
+        for t in failed:
+            _out(f"     {t.question_id}: {(t.error or '')[:100]}")
+
+    if args.output:
+        Path(args.output).write_text(
+            "\n".join(json.dumps(t.to_dict(), ensure_ascii=False) for t in traces) + "\n",
+            encoding="utf-8")
+        _out(f"  traces -> {args.output}")
+
+    if not traces or len(failed) == len(traces):
+        _err("\nFAIL: every question failed — the adapter is not usable against this service")
+        return 1
+    if failed:
+        _out(f"\nPARTIAL: {len(failed)} of {len(traces)} failed; the run would continue "
+             f"past these, but check them before a full eval")
+        return 0
+    _out("\nPASS: every question returned a usable trace")
+    return 0
+
+
+def _spread(items: Sequence[GoldenItem], sample: int) -> list[GoldenItem]:
+    """One question per sitting, so a smoke test cannot pass on one lucky sitting."""
+    by_sitting: dict[str, list[GoldenItem]] = {}
+    for item in items:
+        key = item.reference.sitting_id if item.reference else "(none)"
+        by_sitting.setdefault(key, []).append(item)
+    out: list[GoldenItem] = []
+    for sitting in sorted(by_sitting):
+        out.append(by_sitting[sitting][0])
+        if len(out) >= sample:
+            break
+    return out
+
+
 def cmd_run(args: argparse.Namespace, config: Config) -> int:
     items = _load_items(args)
     options = _adapter_options(config, args)
@@ -1163,6 +1245,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--quiet", action="store_true", help="suppress per-probe progress")
     p.add_argument("--output", help="write the full report as JSON")
     p.set_defaults(func=cmd_ingest_check)
+
+    p = subparsers.add_parser(
+        "smoke", help="run a few golden questions through an adapter against a live service")
+    add_dataset_args(p)
+    add_adapter_args(p)
+    p.add_argument("--sample", type=int, default=5, help="questions to send (default 5)")
+    p.add_argument("--output", help="write the traces as JSONL")
+    p.set_defaults(func=cmd_smoke)
 
     p = subparsers.add_parser("run", help="run the golden set through an adapter")
     add_dataset_args(p)

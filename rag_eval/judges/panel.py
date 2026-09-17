@@ -190,6 +190,12 @@ class JudgePanel:
                         temperature=model.temperature,
                         max_tokens=model.max_tokens,
                     )
+                if not (response.text or "").strip() and response.finish_reason == "length":
+                    raise JudgeParseError(
+                        f"{model.id}: exhausted max_tokens ({model.max_tokens}) on reasoning "
+                        f"({response.reasoning_tokens} reasoning tokens) and emitted no rubric. "
+                        f"Raise judge.models[].max_tokens."
+                    )
                 verdict = parse_verdict(response.text, model.id)
             except Exception as exc:  # noqa: BLE001 - a bad judge call is retried, not fatal
                 self.usage.failed_calls += 1

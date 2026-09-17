@@ -19,6 +19,11 @@ class ChatResponse:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     model: str = ""
+    #: "stop", "length", … — a reasoning model that exhausts max_tokens returns
+    #: empty content with "length", and calling that a malformed reply sends
+    #: whoever reads the error after the wrong problem.
+    finish_reason: str = ""
+    reasoning_tokens: int | None = None
 
 
 class ChatClient(Protocol):
@@ -63,11 +68,15 @@ class ThothChatClient:
             response_format={"type": "json_object"},
         )
         usage = getattr(response, "usage", None)
+        choice = response.choices[0] if response.choices else None
+        details = getattr(usage, "completion_tokens_details", None)
         return ChatResponse(
-            text=(response.choices[0].message.content or "") if response.choices else "",
+            text=(getattr(choice.message, "content", "") or "") if choice else "",
             prompt_tokens=getattr(usage, "prompt_tokens", None),
             completion_tokens=getattr(usage, "completion_tokens", None),
             model=getattr(response, "model", model),
+            finish_reason=getattr(choice, "finish_reason", "") if choice else "",
+            reasoning_tokens=getattr(details, "reasoning_tokens", None),
         )
 
 

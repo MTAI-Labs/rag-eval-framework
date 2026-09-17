@@ -24,6 +24,18 @@ class HttpError(RuntimeError):
         self.url = url
 
 
+#: Transport failures worth retrying. A long ingest holds one connection open
+#: for many minutes, and the far end closing it is common enough that dying on
+#: the first occurrence loses hours of queued work.
+TRANSIENT = (
+    http.client.RemoteDisconnected,
+    http.client.IncompleteRead,
+    ConnectionResetError,
+    TimeoutError,
+    socket.timeout,
+)
+
+
 def post_json(
     url: str,
     payload: dict[str, Any],
@@ -45,19 +57,12 @@ def post_json(
         raise HttpError(exc.code, exc.read().decode("utf-8", "replace"), url) from exc
     except urllib.error.URLError as exc:  # pragma: no cover - network path
         raise RuntimeError(f"cannot reach {url}: {exc.reason}") from exc
+    except TRANSIENT as exc:  # pragma: no cover - network path
+        # A dropped connection surfaces as http.client.RemoteDisconnected, which
+        # no adapter should have to know about. Adapters turn transport errors
+        # into an error trace; they can only do that if the type is predictable.
+        raise RuntimeError(f"{url}: {type(exc).__name__}: {exc}") from exc
     return json.loads(body) if body.strip() else {}
-
-
-#: Transport failures worth retrying. A long ingest holds one connection open
-#: for many minutes, and the far end closing it is common enough that dying on
-#: the first occurrence loses hours of queued work.
-TRANSIENT = (
-    http.client.RemoteDisconnected,
-    http.client.IncompleteRead,
-    ConnectionResetError,
-    TimeoutError,
-    socket.timeout,
-)
 
 
 def post_multipart(
@@ -135,6 +140,8 @@ def post_stream(
         raise HttpError(exc.code, exc.read().decode("utf-8", "replace"), url) from exc
     except urllib.error.URLError as exc:  # pragma: no cover - network path
         raise RuntimeError(f"cannot reach {url}: {exc.reason}") from exc
+    except TRANSIENT as exc:  # pragma: no cover - network path
+        raise RuntimeError(f"{url}: {type(exc).__name__}: {exc}") from exc
 
     if "text/event-stream" not in content_type:
         return ([json.loads(body)] if body.strip() else []), content_type
@@ -181,4 +188,6 @@ def get_json(
         raise HttpError(exc.code, exc.read().decode("utf-8", "replace"), url) from exc
     except urllib.error.URLError as exc:  # pragma: no cover - network path
         raise RuntimeError(f"cannot reach {url}: {exc.reason}") from exc
+    except TRANSIENT as exc:  # pragma: no cover - network path
+        raise RuntimeError(f"{url}: {type(exc).__name__}: {exc}") from exc
     return json.loads(body) if body.strip() else None

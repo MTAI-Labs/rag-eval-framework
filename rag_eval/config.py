@@ -28,7 +28,12 @@ class JudgeModel:
     id: str
     label: str = ""
     temperature: float = 0.0
-    max_tokens: int = 1024
+    #: Generous because the panel models are *reasoning* models: they spend
+    #: most of the budget on hidden reasoning before emitting the rubric. At
+    #: 1024 a judge burns the entire allowance thinking and returns empty
+    #: content with finish_reason="length" — which looks exactly like a model
+    #: refusing to answer. Measured: ~1570 reasoning tokens for one rubric.
+    max_tokens: int = 4096
     # USD per 1k tokens, used for the ops cost estimate.
     input_cost_per_1k: float = 0.0
     output_cost_per_1k: float = 0.0
@@ -41,11 +46,16 @@ class JudgeModel:
 class JudgeConfig:
     base_url_env: str = "THOTH_BASE_URL"
     api_key_env: str = "THOTH_API_KEY"
+    #: The design spec's panel — GLM-5.2, Qwen3.5-397B, Kimi-K2.6 — under the
+    #: ids the Thoth gateway actually serves. These are vendor-prefixed; the
+    #: bare names ("glm-5.2") resolve to nothing and every call 404s, which only
+    #: shows up when judging runs. Check against ${THOTH_BASE_URL}/v1/models
+    #: before changing them.
     models: list[JudgeModel] = field(
         default_factory=lambda: [
-            JudgeModel(id="glm-5.2", label="GLM-5.2"),
-            JudgeModel(id="qwen3.5-397b", label="Qwen3.5-397B"),
-            JudgeModel(id="kimi-k2.6", label="Kimi-K2.6"),
+            JudgeModel(id="zai-org/GLM-5.2", label="GLM-5.2"),
+            JudgeModel(id="Qwen/Qwen3.5-397B-A17B", label="Qwen3.5-397B"),
+            JudgeModel(id="moonshotai/Kimi-K2.6", label="Kimi-K2.6"),
         ]
     )
     # Context handed to the judge, in chunks.

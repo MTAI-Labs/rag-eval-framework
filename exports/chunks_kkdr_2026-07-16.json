@@ -1,0 +1,1042 @@
+{
+  "collection": "parliament_hansard_eval",
+  "sitting_id": "kkdr_2026-07-16",
+  "document": "kkdr_2026-07-16.pdf",
+  "filter_expr": "content_metadata[\"sitting_id\"] == \"kkdr_2026-07-16\"",
+  "query": "parlimen dewan rakyat",
+  "chunk_count": 6,
+  "chunks": [
+    {
+      "document_id": "",
+      "content": "Bil. 35 Khamis 16 Julai 2026\n\nPENYATA RASMI PARLIMEN\n\nParliamentary Debates\n\nKAMAR KHAS\n\nSpecial Chamber\n\nPARLIMEN KELIMA BELAS <br>\nPENGGAL KELIMA <br>\nMESYUARAT KEDUA\n\n",
+      "document_name": "kkdr_2026-07-16.pdf",
+      "document_type": "text",
+      "score": 0.0,
+      "metadata": {
+        "language": "",
+        "date_created": "",
+        "last_modified": "",
+        "page_number": 0,
+        "description": "Bil. 35 Khamis 16 Julai 2026\n\nPENYATA RASMI PARLIMEN\n\nParliamentary Debates\n\nKAMAR KHAS\n\nSpecial Chamber\n\nPARLIMEN KELIMA BELAS <br>\nPENGGAL KELIMA <br>\nMESYUARAT KEDUA\n\n",
+        "height": 0,
+        "width": 0,
+        "location": [],
+        "location_max_dimensions": [],
+        "content_metadata": {
+          "type": "text",
+          "description": "Unstructured text from PDF document.",
+          "page_number": 0,
+          "hierarchy": {
+            "page_count": 23,
+            "page": 0,
+            "block": -1,
+            "line": -1,
+            "span": -1,
+            "nearby_objects": {
+              "text": {
+                "content": [
+                  "Bil. 35 Khamis 16 Julai 2026",
+                  "PENYATA RASMI PARLIMEN",
+                  "Parliamentary Debates",
+                  "KAMAR KHAS",
+                  "Special Chamber",
+                  "PARLIMEN KELIMA BELAS <br>\nPENGGAL KELIMA <br>\nMESYUARAT KEDUA"
+                ],
+                "bbox": [
+                  [
+                    230,
+                    108,
+                    817,
+                    132
+                  ],
+                  [
+                    256,
+                    415,
+                    797,
+                    455
+                  ],
+                  [
+                    421,
+                    459,
+                    627,
+                    482
+                  ],
+                  [
+                    394,
+                    580,
+                    657,
+                    617
+                  ],
+                  [
+                    447,
+                    619,
+                    601,
+                    644
+                  ],
+                  [
+                    379,
+                    1096,
+                    672,
+                    1167
+                  ]
+                ],
+                "type": [
+                  "Page-header",
+                  "Section-header",
+                  "Text",
+                  "Section-header",
+                  "Text",
+                  "Section-header"
+                ]
+              },
+              "images": {
+                "content": [
+                  "MALAYSIA"
+                ],
+                "bbox": [
+                  [
+                    444,
+                    195,
+                    599,
+                    359
+                  ]
+                ],
+                "type": [
+                  "Picture"
+                ]
+              },
+              "structured": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              }
+            }
+          },
+          "subtype": "",
+          "start_time": -1,
+          "end_time": -1,
+          "custom_content": null,
+          "location": null,
+          "max_dimensions": null,
+          "content_url": "",
+          "audio_metadata": null,
+          "text_metadata": {
+            "text_type": "page",
+            "summary": "",
+            "keywords": "",
+            "language": "id",
+            "text_location": [
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "text_location_max_dimensions": [
+              1024,
+              1280
+            ],
+            "custom_content": null
+          },
+          "image_metadata": null,
+          "table_metadata": null,
+          "chart_metadata": null,
+          "error_metadata": null,
+          "info_message_metadata": null,
+          "debug_metadata": null,
+          "raise_on_failure": false,
+          "total_pages": null,
+          "original_source_id": null,
+          "original_source_name": null,
+          "doc_type": "kkdr",
+          "dewan": "kamar khas dewan rakyat",
+          "session_date": "2026-07-16",
+          "ms_offset": 2,
+          "filename": "kkdr_2026-07-16.pdf",
+          "sitting_id": "kkdr_2026-07-16"
+        }
+      }
+    },
+    {
+      "document_id": "",
+      "content": "Bil. 35 Khamis 16 Julai 2026 MALAYSIA PENYATA RASMI PARLIMEN Parliamentary Debates KAMAR KHAS Special Chamber",
+      "document_name": "kkdr_2026-07-16.pdf",
+      "document_type": "infographic",
+      "score": 0.0,
+      "metadata": {
+        "language": "",
+        "date_created": "",
+        "last_modified": "",
+        "page_number": 1,
+        "description": "Bil. 35 Khamis 16 Julai 2026 MALAYSIA PENYATA RASMI PARLIMEN Parliamentary Debates KAMAR KHAS Special Chamber",
+        "height": 0,
+        "width": 0,
+        "location": [
+          -104.0,
+          49.0,
+          820.0,
+          836.0
+        ],
+        "location_max_dimensions": [],
+        "content_metadata": {
+          "type": "structured",
+          "description": "Structured infographic extracted from PDF document.",
+          "page_number": 1,
+          "hierarchy": {
+            "page_count": 23,
+            "page": 1,
+            "block": -1,
+            "line": -1,
+            "span": -1,
+            "nearby_objects": {
+              "text": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              },
+              "images": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              },
+              "structured": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              }
+            }
+          },
+          "subtype": "infographic",
+          "start_time": -1,
+          "end_time": -1,
+          "custom_content": null,
+          "location": [
+            -104,
+            49,
+            820,
+            836
+          ],
+          "max_dimensions": [
+            724,
+            1024
+          ],
+          "content_url": "",
+          "audio_metadata": null,
+          "text_metadata": null,
+          "image_metadata": null,
+          "table_metadata": {
+            "caption": "",
+            "table_format": "image",
+            "table_content": "Bil. 35 Khamis 16 Julai 2026 MALAYSIA PENYATA RASMI PARLIMEN Parliamentary Debates KAMAR KHAS Special Chamber",
+            "table_content_format": "",
+            "table_location": [
+              -104,
+              49,
+              820,
+              836
+            ],
+            "table_location_max_dimensions": [
+              724,
+              1024
+            ],
+            "uploaded_image_uri": "",
+            "custom_content": null
+          },
+          "chart_metadata": null,
+          "error_metadata": null,
+          "info_message_metadata": null,
+          "debug_metadata": null,
+          "raise_on_failure": false,
+          "total_pages": null,
+          "original_source_id": null,
+          "original_source_name": null,
+          "doc_type": "kkdr",
+          "dewan": "kamar khas dewan rakyat",
+          "session_date": "2026-07-16",
+          "ms_offset": 2,
+          "filename": "kkdr_2026-07-16.pdf",
+          "sitting_id": "kkdr_2026-07-16"
+        }
+      }
+    },
+    {
+      "document_id": "",
+      "content": "2 KKDR.16.7.2026\n\n<tbc>adalah kurang daripada lima bulan walaupun dua lanjutan masa telah pun diberikan sehingga 12 November 2026. Jambatan tersebut telah putuskan jalan dan lalu lintas tidak boleh digunakan.\n\nRamai telah menuding jari kepada Ahli Parlimen iaitu saya mengenai masalah dan kelewatan kerja-kerja kontraktor yang dilantik oleh Kerajaan Pusat sedangkan pihak Kerajaan Persekutuan sendiri hanya berdiam diri dan tidak tampil untuk membuat kenyataan mengenai kelewatan terhadap projek-projek tersebut. Selaku Ahli Parlimen Keningau, saya telah membuat lawatan tidak kurang daripada dua kali tetapi masalah masih berlarutan tanpa penyelesaian.\n\nKedua-dua jambatan tersebut adalah laluan penting untuk penduduk sekitar Keningau. Jika tidak disiapkan dan keadaan dibiarkan berterusan, ia nya akan menjejaskan lalu lintas dan perhubungan dan kesejahteraan rakyat dan menjejaskan persepsi terhadap Kerajaan Persekutuan.\n\nOleh demikian, saya amat berharap agar kerajaan dapat mengambil tindakan segera untuk menyiapkan kedua-dua jambatan tersebut demi keselesaan dan kesejahteraan rakyat. Sekian, terima kasih.\n\n**Timbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]:** Silakan Yang Berhormat Menteri untuk menjawab.\n\n## 2.40 ptg.\n\n**Timbalan Menteri Kemajuan Desa dan Wilayah [Datuk Hajah Rubiah binti Wang]:** _Bismillahir",
+      "document_name": "kkdr_2026-07-16.pdf",
+      "document_type": "text",
+      "score": 0.0,
+      "metadata": {
+        "language": "",
+        "date_created": "",
+        "last_modified": "",
+        "page_number": 3,
+        "description": "2 KKDR.16.7.2026\n\n<tbc>adalah kurang daripada lima bulan walaupun dua lanjutan masa telah pun diberikan sehingga 12 November 2026. Jambatan tersebut telah putuskan jalan dan lalu lintas tidak boleh digunakan.\n\nRamai telah menuding jari kepada Ahli Parlimen iaitu saya mengenai masalah dan kelewatan kerja-kerja kontraktor yang dilantik oleh Kerajaan Pusat sedangkan pihak Kerajaan Persekutuan sendiri hanya berdiam diri dan tidak tampil untuk membuat kenyataan mengenai kelewatan terhadap projek-projek tersebut. Selaku Ahli Parlimen Keningau, saya telah membuat lawatan tidak kurang daripada dua kali tetapi masalah masih berlarutan tanpa penyelesaian.\n\nKedua-dua jambatan tersebut adalah laluan penting untuk penduduk sekitar Keningau. Jika tidak disiapkan dan keadaan dibiarkan berterusan, ia nya akan menjejaskan lalu lintas dan perhubungan dan kesejahteraan rakyat dan menjejaskan persepsi terhadap Kerajaan Persekutuan.\n\nOleh demikian, saya amat berharap agar kerajaan dapat mengambil tindakan segera untuk menyiapkan kedua-dua jambatan tersebut demi keselesaan dan kesejahteraan rakyat. Sekian, terima kasih.\n\n**Timbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]:** Silakan Yang Berhormat Menteri untuk menjawab.\n\n## 2.40 ptg.\n\n**Timbalan Menteri Kemajuan Desa dan Wilayah [Datuk Hajah Rubiah binti Wang]:** _Bismillahir",
+        "height": 0,
+        "width": 0,
+        "location": [],
+        "location_max_dimensions": [],
+        "content_metadata": {
+          "type": "text",
+          "description": "Unstructured text from PDF document.",
+          "page_number": 3,
+          "hierarchy": {
+            "page_count": 23,
+            "page": 3,
+            "block": -1,
+            "line": -1,
+            "span": -1,
+            "nearby_objects": {
+              "text": {
+                "content": [
+                  "2 KKDR.16.7.2026",
+                  "<tbc>adalah kurang daripada lima bulan walaupun dua lanjutan masa telah pun diberikan sehingga 12 November 2026. Jambatan tersebut telah putuskan jalan dan lalu lintas tidak boleh digunakan.",
+                  "Ramai telah menuding jari kepada Ahli Parlimen iaitu saya mengenai masalah dan kelewatan kerja-kerja kontraktor yang dilantik oleh Kerajaan Pusat sedangkan pihak Kerajaan Persekutuan sendiri hanya berdiam diri dan tidak tampil untuk membuat kenyataan mengenai kelewatan terhadap projek-projek tersebut. Selaku Ahli Parlimen Keningau, saya telah membuat lawatan tidak kurang daripada dua kali tetapi masalah masih berlarutan tanpa penyelesaian.",
+                  "Kedua-dua jambatan tersebut adalah laluan penting untuk penduduk sekitar Keningau. Jika tidak disiapkan dan keadaan dibiarkan berterusan, ia nya akan menjejaskan lalu lintas dan perhubungan dan kesejahteraan rakyat dan menjejaskan persepsi terhadap Kerajaan Persekutuan.",
+                  "Oleh demikian, saya amat berharap agar kerajaan dapat mengambil tindakan segera untuk menyiapkan kedua-dua jambatan tersebut demi keselesaan dan kesejahteraan rakyat. Sekian, terima kasih.",
+                  "**Timbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]:** Silakan Yang Berhormat Menteri untuk menjawab.",
+                  "## 2.40 ptg.",
+                  "**Timbalan Menteri Kemajuan Desa dan Wilayah [Datuk Hajah Rubiah binti Wang]:** _Bismillahirrahmanirrahim. Assalamualaikum warahmatullahi wabarakatuh._",
+                  "**Timbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]:** _Waalaikumussalam._",
+                  "**Datuk Hajah Rubiah binti Wang:** Terima kasih Dato’ Yang di-Pertua. Terima kasih YB Keningau atas soalan yang menunjukkan Yang Berhormat amat prihatin dengan kemudahan infra kawasan luar bandar.",
+                  "Dato’ Yang di-Pertua, Kementerian Kemajuan Desa dan Wilayah (KKDW) mengambil maklum akan keperluan untuk menyediakan infrastruktur jalan dan jambatan yang selamat dan berkualiti, khususnya di kawasan luar bandar dan pedalaman Sabah. Kemudahan ini amat penting bagi memastikan penduduk mempunyai akses yang lebih baik kepada sekolah, kemudahan kesihatan, pusat ekonomi dan juga pelbagai perkhidmatan asas.",
+                  "Untuk makluman Yang Berhormat, jambatan yang dirujuk sebagai jambatan lintasan sungai di Jalan Luagan, Kampung Samalang adalah Projek Menaik Taraf Jambatan Sungai Liawan di KM3.40, Jalan Luagan, Keningau, Sabah telah diluluskan di bawah Rancangan Malaysia Kedua Belas, _Rolling Plan_ Kedua Tahun 2022 dengan kos keseluruhan sebanyak RM4.35 juta.",
+                  "Skop projek melibatkan pembinaan semula sebuah jambatan sepanjang 40 meter dengan kelebaran 10 meter. Jabatan Kerja Raya Negeri Sabah telah dilantik sebagai agensi pelaksana bagi melaksanakan projek tersebut. Sehingga 30 Jun 2026, kemajuan fizikal sebenar projek telah mencapai 95.6 peratus berbanding jadual 100 peratus, iaitu kelewatan sebanyak 4.4 peratus ataupun 42 hari.",
+                  "**1440**"
+                ],
+                "bbox": [
+                  [
+                    209,
+                    110,
+                    801,
+                    127
+                  ],
+                  [
+                    199,
+                    148,
+                    801,
+                    204
+                  ],
+                  [
+                    199,
+                    216,
+                    801,
+                    329
+                  ],
+                  [
+                    199,
+                    340,
+                    801,
+                    415
+                  ],
+                  [
+                    199,
+                    427,
+                    801,
+                    482
+                  ],
+                  [
+                    199,
+                    505,
+                    801,
+                    541
+                  ],
+                  [
+                    199,
+                    582,
+                    273,
+                    597
+                  ],
+                  [
+                    199,
+                    611,
+                    801,
+                    663
+                  ],
+                  [
+                    199,
+                    676,
+                    801,
+                    711
+                  ],
+                  [
+                    199,
+                    724,
+                    801,
+                    780
+                  ],
+                  [
+                    199,
+                    791,
+                    801,
+                    903
+                  ],
+                  [
+                    199,
+                    916,
+                    801,
+                    1009
+                  ],
+                  [
+                    199,
+                    1022,
+                    801,
+                    1132
+                  ],
+                  [
+                    199,
+                    492,
+                    252,
+                    508
+                  ]
+                ],
+                "type": [
+                  "Page-header",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Section-header",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Caption"
+                ]
+              },
+              "images": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              },
+              "structured": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              }
+            }
+          },
+          "subtype": "",
+          "start_time": -1,
+          "end_time": -1,
+          "custom_content": null,
+          "location": null,
+          "max_dimensions": null,
+          "content_url": "",
+          "audio_metadata": null,
+          "text_metadata": {
+            "text_type": "page",
+            "summary": "",
+            "keywords": "",
+            "language": "id",
+            "text_location": [
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "text_location_max_dimensions": [
+              1024,
+              1280
+            ],
+            "custom_content": null
+          },
+          "image_metadata": null,
+          "table_metadata": null,
+          "chart_metadata": null,
+          "error_metadata": null,
+          "info_message_metadata": null,
+          "debug_metadata": null,
+          "raise_on_failure": false,
+          "total_pages": null,
+          "original_source_id": null,
+          "original_source_name": null,
+          "doc_type": "kkdr",
+          "dewan": "kamar khas dewan rakyat",
+          "session_date": "2026-07-16",
+          "ms_offset": 2,
+          "filename": "kkdr_2026-07-16.pdf",
+          "sitting_id": "kkdr_2026-07-16"
+        }
+      }
+    },
+    {
+      "document_id": "",
+      "content": "KKDR.16.7.2026 21\n\nKamar Khas kali ini juga telah memberi peluang kepada seramai sembilan orang ahli daripada pihak backbenchers dan tiga orang ahli daripada pembangkang untuk mempengerusikan mesyuarat Kamar Khas di bawah Peraturan Mesyuarat 16(3). Selain itu, terdapat Ahli-ahli Yang Berhormat telah membawa pelawat dari kawasan Parlimen untuk menyaksikan persidangan Kamar Khas.\n\nAhli-ahli Yang Berhormat, saya mengucapkan selamat pulang dan semoga Ahli-ahli Yang Berhormat selamat sampai ke destinasi masing-masing dan semoga Ahli-ahli Yang Berhormat sentiasa sihat walafiat di samping keluarga tersayang.\n\nKamar Khas hari ini ditangguhkan sehingga satu tarikh yang akan ditetapkan kemudian. Sekian, terima kasih.\n\n**_[Kamar Khas ditangguhkan pada pukul 3.50 petang]_*",
+      "document_name": "kkdr_2026-07-16.pdf",
+      "document_type": "text",
+      "score": 0.0,
+      "metadata": {
+        "language": "",
+        "date_created": "",
+        "last_modified": "",
+        "page_number": 22,
+        "description": "KKDR.16.7.2026 21\n\nKamar Khas kali ini juga telah memberi peluang kepada seramai sembilan orang ahli daripada pihak backbenchers dan tiga orang ahli daripada pembangkang untuk mempengerusikan mesyuarat Kamar Khas di bawah Peraturan Mesyuarat 16(3). Selain itu, terdapat Ahli-ahli Yang Berhormat telah membawa pelawat dari kawasan Parlimen untuk menyaksikan persidangan Kamar Khas.\n\nAhli-ahli Yang Berhormat, saya mengucapkan selamat pulang dan semoga Ahli-ahli Yang Berhormat selamat sampai ke destinasi masing-masing dan semoga Ahli-ahli Yang Berhormat sentiasa sihat walafiat di samping keluarga tersayang.\n\nKamar Khas hari ini ditangguhkan sehingga satu tarikh yang akan ditetapkan kemudian. Sekian, terima kasih.\n\n**_[Kamar Khas ditangguhkan pada pukul 3.50 petang]_*",
+        "height": 0,
+        "width": 0,
+        "location": [],
+        "location_max_dimensions": [],
+        "content_metadata": {
+          "type": "text",
+          "description": "Unstructured text from PDF document.",
+          "page_number": 22,
+          "hierarchy": {
+            "page_count": 23,
+            "page": 22,
+            "block": -1,
+            "line": -1,
+            "span": -1,
+            "nearby_objects": {
+              "text": {
+                "content": [
+                  "KKDR.16.7.2026 21",
+                  "Kamar Khas kali ini juga telah memberi peluang kepada seramai sembilan orang ahli daripada pihak backbenchers dan tiga orang ahli daripada pembangkang untuk mempengerusikan mesyuarat Kamar Khas di bawah Peraturan Mesyuarat 16(3). Selain itu, terdapat Ahli-ahli Yang Berhormat telah membawa pelawat dari kawasan Parlimen untuk menyaksikan persidangan Kamar Khas.",
+                  "Ahli-ahli Yang Berhormat, saya mengucapkan selamat pulang dan semoga Ahli-ahli Yang Berhormat selamat sampai ke destinasi masing-masing dan semoga Ahli-ahli Yang Berhormat sentiasa sihat walafiat di samping keluarga tersayang.",
+                  "Kamar Khas hari ini ditangguhkan sehingga satu tarikh yang akan ditetapkan kemudian. Sekian, terima kasih.",
+                  "**_[Kamar Khas ditangguhkan pada pukul 3.50 petang]_**"
+                ],
+                "bbox": [
+                  [
+                    230,
+                    110,
+                    825,
+                    127
+                  ],
+                  [
+                    222,
+                    148,
+                    825,
+                    261
+                  ],
+                  [
+                    222,
+                    273,
+                    825,
+                    348
+                  ],
+                  [
+                    222,
+                    360,
+                    825,
+                    396
+                  ],
+                  [
+                    276,
+                    435,
+                    696,
+                    453
+                  ]
+                ],
+                "type": [
+                  "Page-header",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Caption"
+                ]
+              },
+              "images": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              },
+              "structured": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              }
+            }
+          },
+          "subtype": "",
+          "start_time": -1,
+          "end_time": -1,
+          "custom_content": null,
+          "location": null,
+          "max_dimensions": null,
+          "content_url": "",
+          "audio_metadata": null,
+          "text_metadata": {
+            "text_type": "page",
+            "summary": "",
+            "keywords": "",
+            "language": "id",
+            "text_location": [
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "text_location_max_dimensions": [
+              1024,
+              1280
+            ],
+            "custom_content": null
+          },
+          "image_metadata": null,
+          "table_metadata": null,
+          "chart_metadata": null,
+          "error_metadata": null,
+          "info_message_metadata": null,
+          "debug_metadata": null,
+          "raise_on_failure": false,
+          "total_pages": null,
+          "original_source_id": null,
+          "original_source_name": null,
+          "doc_type": "kkdr",
+          "dewan": "kamar khas dewan rakyat",
+          "session_date": "2026-07-16",
+          "ms_offset": 2,
+          "filename": "kkdr_2026-07-16.pdf",
+          "sitting_id": "kkdr_2026-07-16"
+        }
+      }
+    },
+    {
+      "document_id": "",
+      "content": "KKDR.16.7.2026 1\n\n# MALAYSIA\n\nKAMAR KHAS\n\n**PARLIMEN KELIMA BELAS**\n\nPENGGAL KELIMA\n\nMESYUARAT KEDUA\n\nKhamis, 16 Julai 2026\n\n**Mesyuarat dimulakan pada pukul 2.30 petang**\n\nDOA\n\n_[Timbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor_\n\n_mempengerusikan Mesyuarat]_\n\n#UCAPAN DI BAWAH USUL BERKENAAN PERKARA TADBIR KERAJAAN (P.M. 17)\n\nCADANGAN MENYIAPKAN PEMBINAAN DAN PENAIKTARAFAN JAMBATAN DI KAMPUNG SAMALANG, SUNGAI LIAWAN DAN JAMBATAN APIN-APIN, KENINGAU, SABAH\n\nTimbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]:\n\n_[Membaca doa] Assalamualaikum_ dan selamat petang Yang Berhormat. Silakan Yang Berhormat.\n\n### 2.36 ptg.\n\n**Datuk Seri Panglima Dr. Jeffrey G. Kitingan [Keningau]:** Terima kasih Tuan Yang di-Pertua. Saya ada dua usul:\n\n(i) mengenai pembinaan dan penaiktarafan dua jambatan di Keningau iaitu jambatan lintasan sungai di Jalan Luangan, Kampung Samalang, Keningau yang dinyatakan bermula 22 November 2023 dan sepatutnya siap pada 21 Mei 2025; dan\n\n(ii) Jambatan Apin-Apin, Keningau yang dinyatakan sebagai bermula 20 Mei 2024 dan siap pada 19 November 2025 dengan dua lanjutan masa hingga 12 November 2026.\n\nDan setakat 5 Jun 2026, kedua-dua jambatan masih belum disiapkan dan nampaknya seolah-olah terbengkalai. Ketidaksiapan Jambatan Kampung Samalang tersebut kini menjadi isu hangat dengan pelbagai tudu",
+      "document_name": "kkdr_2026-07-16.pdf",
+      "document_type": "text",
+      "score": 0.0,
+      "metadata": {
+        "language": "",
+        "date_created": "",
+        "last_modified": "",
+        "page_number": 2,
+        "description": "KKDR.16.7.2026 1\n\n# MALAYSIA\n\nKAMAR KHAS\n\n**PARLIMEN KELIMA BELAS**\n\nPENGGAL KELIMA\n\nMESYUARAT KEDUA\n\nKhamis, 16 Julai 2026\n\n**Mesyuarat dimulakan pada pukul 2.30 petang**\n\nDOA\n\n_[Timbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor_\n\n_mempengerusikan Mesyuarat]_\n\n#UCAPAN DI BAWAH USUL BERKENAAN PERKARA TADBIR KERAJAAN (P.M. 17)\n\nCADANGAN MENYIAPKAN PEMBINAAN DAN PENAIKTARAFAN JAMBATAN DI KAMPUNG SAMALANG, SUNGAI LIAWAN DAN JAMBATAN APIN-APIN, KENINGAU, SABAH\n\nTimbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]:\n\n_[Membaca doa] Assalamualaikum_ dan selamat petang Yang Berhormat. Silakan Yang Berhormat.\n\n### 2.36 ptg.\n\n**Datuk Seri Panglima Dr. Jeffrey G. Kitingan [Keningau]:** Terima kasih Tuan Yang di-Pertua. Saya ada dua usul:\n\n(i) mengenai pembinaan dan penaiktarafan dua jambatan di Keningau iaitu jambatan lintasan sungai di Jalan Luangan, Kampung Samalang, Keningau yang dinyatakan bermula 22 November 2023 dan sepatutnya siap pada 21 Mei 2025; dan\n\n(ii) Jambatan Apin-Apin, Keningau yang dinyatakan sebagai bermula 20 Mei 2024 dan siap pada 19 November 2025 dengan dua lanjutan masa hingga 12 November 2026.\n\nDan setakat 5 Jun 2026, kedua-dua jambatan masih belum disiapkan dan nampaknya seolah-olah terbengkalai. Ketidaksiapan Jambatan Kampung Samalang tersebut kini menjadi isu hangat dengan pelbagai tudu",
+        "height": 0,
+        "width": 0,
+        "location": [],
+        "location_max_dimensions": [],
+        "content_metadata": {
+          "type": "text",
+          "description": "Unstructured text from PDF document.",
+          "page_number": 2,
+          "hierarchy": {
+            "page_count": 23,
+            "page": 2,
+            "block": -1,
+            "line": -1,
+            "span": -1,
+            "nearby_objects": {
+              "text": {
+                "content": [
+                  "KKDR.16.7.2026 1",
+                  "# MALAYSIA",
+                  "KAMAR KHAS",
+                  "**PARLIMEN KELIMA BELAS**",
+                  "PENGGAL KELIMA",
+                  "MESYUARAT KEDUA",
+                  "Khamis, 16 Julai 2026",
+                  "**Mesyuarat dimulakan pada pukul 2.30 petang**",
+                  "DOA",
+                  "_[Timbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor_",
+                  "_mempengerusikan Mesyuarat]_",
+                  "#UCAPAN DI BAWAH USUL BERKENAAN PERKARA TADBIR KERAJAAN (P.M. 17)",
+                  "CADANGAN MENYIAPKAN PEMBINAAN DAN PENAIKTARAFAN JAMBATAN DI KAMPUNG SAMALANG, SUNGAI LIAWAN DAN JAMBATAN APIN-APIN, KENINGAU, SABAH",
+                  "Timbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]:",
+                  "_[Membaca doa] Assalamualaikum_ dan selamat petang Yang Berhormat. Silakan Yang Berhormat.",
+                  "### 2.36 ptg.",
+                  "**Datuk Seri Panglima Dr. Jeffrey G. Kitingan [Keningau]:** Terima kasih Tuan Yang di-Pertua. Saya ada dua usul:",
+                  "(i) mengenai pembinaan dan penaiktarafan dua jambatan di Keningau iaitu jambatan lintasan sungai di Jalan Luangan, Kampung Samalang, Keningau yang dinyatakan bermula 22 November 2023 dan sepatutnya siap pada 21 Mei 2025; dan",
+                  "(ii) Jambatan Apin-Apin, Keningau yang dinyatakan sebagai bermula 20 Mei 2024 dan siap pada 19 November 2025 dengan dua lanjutan masa hingga 12 November 2026.",
+                  "Dan setakat 5 Jun 2026, kedua-dua jambatan masih belum disiapkan dan nampaknya seolah-olah terbengkalai. Ketidaksiapan Jambatan Kampung Samalang tersebut kini menjadi isu hangat dengan pelbagai tuduhan dan tohmahan oleh penduduk tempatan disebabkan oleh kesengsaraan yang mereka hadapi, mereka tidak dapat menggunakan jambatan tersebut. Isu tersebut juga telah dipaparkan di media sosial termasuk di laman _web Facebook Sabah Revolusi_ dan menarik banyak kritikan sehingga Suruhanjaya Pencegahan Rasuah Malaysia atau SPRM digesa membuat siasatan.",
+                  "Jambatan kedua di Apin-Apin sudah berjalan melebihi dua tahun, tetapi peratusan kerja hanyalah kurang daripada 40 peratus setakat ini. Tempoh tamat<tbc>"
+                ],
+                "bbox": [
+                  [
+                    230,
+                    110,
+                    825,
+                    125
+                  ],
+                  [
+                    478,
+                    148,
+                    571,
+                    165
+                  ],
+                  [
+                    465,
+                    175,
+                    585,
+                    194
+                  ],
+                  [
+                    413,
+                    206,
+                    635,
+                    223
+                  ],
+                  [
+                    446,
+                    235,
+                    603,
+                    252
+                  ],
+                  [
+                    436,
+                    263,
+                    612,
+                    280
+                  ],
+                  [
+                    436,
+                    292,
+                    614,
+                    309
+                  ],
+                  [
+                    341,
+                    321,
+                    707,
+                    340
+                  ],
+                  [
+                    503,
+                    350,
+                    546,
+                    367
+                  ],
+                  [
+                    291,
+                    379,
+                    757,
+                    397
+                  ],
+                  [
+                    400,
+                    398,
+                    646,
+                    416
+                  ],
+                  [
+                    304,
+                    459,
+                    744,
+                    495
+                  ],
+                  [
+                    254,
+                    516,
+                    794,
+                    572
+                  ],
+                  [
+                    276,
+                    593,
+                    823,
+                    610
+                  ],
+                  [
+                    222,
+                    612,
+                    825,
+                    648
+                  ],
+                  [
+                    222,
+                    689,
+                    295,
+                    706
+                  ],
+                  [
+                    222,
+                    716,
+                    825,
+                    753
+                  ],
+                  [
+                    276,
+                    764,
+                    772,
+                    858
+                  ],
+                  [
+                    276,
+                    870,
+                    772,
+                    925
+                  ],
+                  [
+                    222,
+                    935,
+                    825,
+                    1089
+                  ],
+                  [
+                    222,
+                    1099,
+                    825,
+                    1137
+                  ]
+                ],
+                "type": [
+                  "Page-header",
+                  "Title",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Title",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Section-header",
+                  "Text",
+                  "List-item",
+                  "List-item",
+                  "Text",
+                  "Text"
+                ]
+              },
+              "images": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              },
+              "structured": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              }
+            }
+          },
+          "subtype": "",
+          "start_time": -1,
+          "end_time": -1,
+          "custom_content": null,
+          "location": null,
+          "max_dimensions": null,
+          "content_url": "",
+          "audio_metadata": null,
+          "text_metadata": {
+            "text_type": "page",
+            "summary": "",
+            "keywords": "",
+            "language": "id",
+            "text_location": [
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "text_location_max_dimensions": [
+              1024,
+              1280
+            ],
+            "custom_content": null
+          },
+          "image_metadata": null,
+          "table_metadata": null,
+          "chart_metadata": null,
+          "error_metadata": null,
+          "info_message_metadata": null,
+          "debug_metadata": null,
+          "raise_on_failure": false,
+          "total_pages": null,
+          "original_source_id": null,
+          "original_source_name": null,
+          "doc_type": "kkdr",
+          "dewan": "kamar khas dewan rakyat",
+          "session_date": "2026-07-16",
+          "ms_offset": 2,
+          "filename": "kkdr_2026-07-16.pdf",
+          "sitting_id": "kkdr_2026-07-16"
+        }
+      }
+    },
+    {
+      "document_id": "",
+      "content": "ya pembangunan industri REE negara ini dapat dilaksanakan secara cekap, teratur dan mematuhi semua keperluan perundangan yang berkuat kuasa,\n\nAkhir sekali Yang di-Pertua soalan 10, berkenaan dengan sama ada kerajaan bersedia sambut peranan Kaukus Parlimen Mineral Kritikal sebagai pemudah cara. Kita mesti sekali lagi ucapkan terima kasih kerana minat dan perhatian berat oleh kaukus. Kita alu-alukan penglibatan semua pihak yang berkepentingan, termasuk Ahli-ahli Parlimen untuk memberikan pandangan dan cadangan yang konstruktif ke arah memperkukuh pembangunan industri mineral kritikal negara. Kita dah ada apa dia panggil penyelarasan pelaksanaan projek, penilaian-penilaian teknikal, jadi maknanya kalaupun kita nak bagi ruang itu saya percaya ia boleh diadakan melalui sesi libat urus dengan semua pihak yang berkepentingan termasuk Kaukus Parlimen Mineral Kritikal.\n\nJadi, saya harap ini memberikan jawapan yang baik untuk soalan yang dikemukakan oleh Yang Berhormat. Terima kasih.\n\nTimbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]: Terima kasih Menteri. Silakan Yang Berhormat.\n\nTuan Lee Chuan How [Ipoh Timor]: Terima kasih Yang di-Pertua. Mantap jawapan Yang Berhormat Timbalan Menteri.\n\nTimbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]: Sebentar Menteri, Yang Berhormat. Saya terpaksa _stop_ pukul 4.00. Habis tak habis sekarang, ",
+      "document_name": "kkdr_2026-07-16.pdf",
+      "document_type": "text",
+      "score": 0.0,
+      "metadata": {
+        "language": "",
+        "date_created": "",
+        "last_modified": "",
+        "page_number": 16,
+        "description": "ya pembangunan industri REE negara ini dapat dilaksanakan secara cekap, teratur dan mematuhi semua keperluan perundangan yang berkuat kuasa,\n\nAkhir sekali Yang di-Pertua soalan 10, berkenaan dengan sama ada kerajaan bersedia sambut peranan Kaukus Parlimen Mineral Kritikal sebagai pemudah cara. Kita mesti sekali lagi ucapkan terima kasih kerana minat dan perhatian berat oleh kaukus. Kita alu-alukan penglibatan semua pihak yang berkepentingan, termasuk Ahli-ahli Parlimen untuk memberikan pandangan dan cadangan yang konstruktif ke arah memperkukuh pembangunan industri mineral kritikal negara. Kita dah ada apa dia panggil penyelarasan pelaksanaan projek, penilaian-penilaian teknikal, jadi maknanya kalaupun kita nak bagi ruang itu saya percaya ia boleh diadakan melalui sesi libat urus dengan semua pihak yang berkepentingan termasuk Kaukus Parlimen Mineral Kritikal.\n\nJadi, saya harap ini memberikan jawapan yang baik untuk soalan yang dikemukakan oleh Yang Berhormat. Terima kasih.\n\nTimbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]: Terima kasih Menteri. Silakan Yang Berhormat.\n\nTuan Lee Chuan How [Ipoh Timor]: Terima kasih Yang di-Pertua. Mantap jawapan Yang Berhormat Timbalan Menteri.\n\nTimbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]: Sebentar Menteri, Yang Berhormat. Saya terpaksa _stop_ pukul 4.00. Habis tak habis sekarang, ",
+        "height": 0,
+        "width": 0,
+        "location": [],
+        "location_max_dimensions": [],
+        "content_metadata": {
+          "type": "text",
+          "description": "Unstructured text from PDF document.",
+          "page_number": 16,
+          "hierarchy": {
+            "page_count": 23,
+            "page": 16,
+            "block": -1,
+            "line": -1,
+            "span": -1,
+            "nearby_objects": {
+              "text": {
+                "content": [
+                  "KKDR.16.7.2026 15",
+                  "Pertama, peringkat Persekutuan iaitu kita ada Mesyuarat _Special Task Force_ Hala Tuju Pembangunan Industri Unsur Nadir Bumi (REE) yang dipengerusikan oleh Yang Berhormat Menteri Sumber Asli dan Kelestarian Alam. Dalam itu ada MITI, ada MOF, ada Kementerian Ekonomi, ada MOSTI dan juga kehadiran Jabatan Perdana Menteri. Jadi, ini menjadi ejen ataupun platform yang amat penting untuk penyelarasan.",
+                  "Di peringkat kerajaan negeri pula ada mesyuarat Majlis Mineral Negara yang dipengerusikan oleh Yang Amat Berhormat Timbalan Perdana Menteri II. Penyelarasan pembangunan projek ini dilaksanakan mengikut bidang kuasa masing-masing melalui kementerian dan agensi berkaitan termasuk kerajaan negeri dan kementerian-kementerian yang berkenaan.",
+                  "Walau bagaimanapun, saya percaya dan kita tidak mahu mendabik dada ini semua okey, _settled everything_ ya. Kita terbuka untuk menambah baik apa-apa mekanisme penyelarasan dari semasa ke semasa sekiranya ada keperluan, untuk kita pastikan supaya pembangunan industri REE negara ini dapat dilaksanakan secara cekap, teratur dan mematuhi semua keperluan perundangan yang berkuat kuasa,",
+                  "Akhir sekali Yang di-Pertua soalan 10, berkenaan dengan sama ada kerajaan bersedia sambut peranan Kaukus Parlimen Mineral Kritikal sebagai pemudah cara. Kita mesti sekali lagi ucapkan terima kasih kerana minat dan perhatian berat oleh kaukus. Kita alu-alukan penglibatan semua pihak yang berkepentingan, termasuk Ahli-ahli Parlimen untuk memberikan pandangan dan cadangan yang konstruktif ke arah memperkukuh pembangunan industri mineral kritikal negara. Kita dah ada apa dia panggil penyelarasan pelaksanaan projek, penilaian-penilaian teknikal, jadi maknanya kalaupun kita nak bagi ruang itu saya percaya ia boleh diadakan melalui sesi libat urus dengan semua pihak yang berkepentingan termasuk Kaukus Parlimen Mineral Kritikal.",
+                  "Jadi, saya harap ini memberikan jawapan yang baik untuk soalan yang dikemukakan oleh Yang Berhormat. Terima kasih.",
+                  "Timbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]: Terima kasih Menteri. Silakan Yang Berhormat.",
+                  "Tuan Lee Chuan How [Ipoh Timor]: Terima kasih Yang di-Pertua. Mantap jawapan Yang Berhormat Timbalan Menteri.",
+                  "Timbalan Yang di-Pertua [Dato’ Dr. Ramli bin Dato’ Mohd Nor]: Sebentar Menteri, Yang Berhormat. Saya terpaksa _stop_ pukul 4.00. Habis tak habis sekarang, pukul 4.00 saya akan berhentikan mengikut peraturan. Silakan.",
+                  "Tuan Lee Chuan How [Ipoh Timor]: Terima kasih Timbalan Menteri, Speaker. _Sovereign co-operation_ inilah istilah yang diuar-uarkan di luar sana antara Perancis dengan negara kita dalam _rare earth elements_ dan atau _rare earth separation_ atau _rare earth technology_ atau _technology transfer_ yang sedia ada ini. Dan kita perlu akur dengan realiti bahawasanya _technology transfer_ atau kerjasama dengan China melalui _the sulfate or chloride route_ MRCE di belah- belah utara negeri Perak, benda itu telah menghasilkan sedikit sebanyak hasil, baik buruk lain kira.",
+                  "Kerjasama dan perundingan dan perbincangan bersama dengan US juga sampai kita hantar rombongan, ada PTG-PTG di peringkat negeri, ada Ahli-ahli",
+                  "**1530**"
+                ],
+                "bbox": [
+                  [
+                    228,
+                    110,
+                    821,
+                    127
+                  ],
+                  [
+                    222,
+                    148,
+                    821,
+                    261
+                  ],
+                  [
+                    222,
+                    273,
+                    821,
+                    367
+                  ],
+                  [
+                    222,
+                    379,
+                    821,
+                    490
+                  ],
+                  [
+                    222,
+                    504,
+                    821,
+                    693
+                  ],
+                  [
+                    222,
+                    720,
+                    821,
+                    753
+                  ],
+                  [
+                    222,
+                    766,
+                    821,
+                    800
+                  ],
+                  [
+                    222,
+                    812,
+                    821,
+                    849
+                  ],
+                  [
+                    222,
+                    860,
+                    821,
+                    916
+                  ],
+                  [
+                    222,
+                    926,
+                    821,
+                    1076
+                  ],
+                  [
+                    222,
+                    1089,
+                    821,
+                    1125
+                  ],
+                  [
+                    222,
+                    705,
+                    269,
+                    719
+                  ]
+                ],
+                "type": [
+                  "Page-header",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Text",
+                  "Caption"
+                ]
+              },
+              "images": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              },
+              "structured": {
+                "content": [],
+                "bbox": [],
+                "type": []
+              }
+            }
+          },
+          "subtype": "",
+          "start_time": -1,
+          "end_time": -1,
+          "custom_content": null,
+          "location": null,
+          "max_dimensions": null,
+          "content_url": "",
+          "audio_metadata": null,
+          "text_metadata": {
+            "text_type": "page",
+            "summary": "",
+            "keywords": "",
+            "language": "id",
+            "text_location": [
+              -1,
+              -1,
+              -1,
+              -1
+            ],
+            "text_location_max_dimensions": [
+              1024,
+              1280
+            ],
+            "custom_content": null
+          },
+          "image_metadata": null,
+          "table_metadata": null,
+          "chart_metadata": null,
+          "error_metadata": null,
+          "info_message_metadata": null,
+          "debug_metadata": null,
+          "raise_on_failure": false,
+          "total_pages": null,
+          "original_source_id": null,
+          "original_source_name": null,
+          "doc_type": "kkdr",
+          "dewan": "kamar khas dewan rakyat",
+          "session_date": "2026-07-16",
+          "ms_offset": 2,
+          "filename": "kkdr_2026-07-16.pdf",
+          "sitting_id": "kkdr_2026-07-16"
+        }
+      }
+    }
+  ]
+}
