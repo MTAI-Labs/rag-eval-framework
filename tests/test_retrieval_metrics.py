@@ -121,3 +121,91 @@ def test_empty_aggregate_reports_none_not_zero():
     aggregate = retrieval.aggregate([], k_values=(5,))
     assert aggregate["hit_rate@5"] is None
     assert aggregate["mrr"] is None
+
+
+# -- citation status: "didn't cite" is a finding, not missing data ---------
+def test_citation_status_separates_the_four_outcomes():
+    gold = ref("dr", "2026-06-22", 3)
+    assert retrieval.citation_status([ref("dr", "2026-06-22", 3)], gold) == "page_match"
+    assert retrieval.citation_status([ref("dr", "2026-06-22", 99)], gold) == "sitting_only"
+    assert retrieval.citation_status([ref("dn", "2026-08-04", 3)], gold) == "wrong"
+    assert retrieval.citation_status([], gold) == "none"
+
+
+def test_no_citation_counts_as_a_miss_but_is_reported_separately():
+    # Excluding uncited questions would flatter a RAG that simply stopped
+    # citing; hiding them among the wrong-page failures would point whoever
+    # reads the scorecard at the wrong fix.
+    gold = item("q1", ref("dr", "2026-06-22", 3))
+    scored = [
+        retrieval.score_question(gold, trace("q1", [chunk(1, "dr_2026-06-22", 3)],
+                                             cited=[ref("dr", "2026-06-22", 3)]), k_values=(5,)),
+        retrieval.score_question(gold, trace("q2", [chunk(1, "dr_2026-06-22", 3)],
+                                             cited=[]), k_values=(5,)),
+    ]
+    agg = retrieval.aggregate(scored, k_values=(5,))
+
+    assert agg["page_citation_accuracy"] == 0.5      # the uncited one counts as a miss
+    assert agg["no_citation_rate"] == 0.5            # and is visible on its own
+    assert agg["citation_breakdown"] == {
+        "page_match": 1, "sitting_only": 0, "wrong": 0, "none": 1,
+    }
+
+
+def test_the_breakdown_distinguishes_wrong_page_from_wrong_sitting():
+    gold = item("q1", ref("dr", "2026-06-22", 3))
+    scored = [
+        retrieval.score_question(gold, trace("q1", [], cited=[ref("dr", "2026-06-22", 99)]),
+                                 k_values=(5,)),
+        retrieval.score_question(gold, trace("q2", [], cited=[ref("dn", "2026-08-04", 3)]),
+                                 k_values=(5,)),
+    ]
+    agg = retrieval.aggregate(scored, k_values=(5,))
+    assert agg["citation_breakdown"]["sitting_only"] == 1
+    assert agg["citation_breakdown"]["wrong"] == 1
+    assert agg["no_citation_rate"] == 0.0
+
+
+def test_breakdown_totals_match_the_scorable_count():
+    gold = item("q1", ref("dr", "2026-06-22", 3))
+    scored = [retrieval.score_question(gold, trace(f"q{i}", [], cited=c), k_values=(5,))
+              for i, c in enumerate([[ref("dr", "2026-06-22", 3)], [], [ref("dn", "2019-05-06", 1)]])]
+    agg = retrieval.aggregate(scored, k_values=(5,))
+    assert sum(agg["citation_breakdown"].values()) == agg["scorable"] == 3
+
+
+# -- empty retrieval and errored traces ------------------------------------
+def test_empty_retrieval_scores_zero_without_dividing_by_zero():
+    # The RAG returned nothing at all. Every retrieval metric is a legitimate
+    # miss, not missing data — the question was asked and answered badly.
+    gold = item("q1", ref("dr", "2026-06-22", 3))
+    r = retrieval.score_question(gold, trace("q1", [], cited=[]), k_values=(1, 5))
+
+    assert r.scorable is True
+    assert r.hit_at_k == {1: False, 5: False}
+    assert r.recall_at_k == {1: False, 5: False}
+    assert r.reciprocal_rank == 0.0
+    assert r.first_correct_rank is None
+    assert r.citation_status == "none"
+
+
+def test_an_errored_trace_still_scores_as_a_miss():
+    # An adapter failure is an ops problem, but the question still did not get
+    # its evidence — retrieval must not quietly skip it.
+    gold = item("q1", ref("dr", "2026-06-22", 3))
+    r = retrieval.score_question(gold, trace("q1", [], error="HTTP 503"), k_values=(5,))
+    agg = retrieval.aggregate([r], k_values=(5,))
+
+    assert agg["scorable"] == 1
+    assert agg["hit_rate@5"] == 0.0
+    assert agg["no_citation_rate"] == 1.0
+
+
+def test_a_question_with_no_gold_reference_is_excluded_from_citations_too():
+    r = retrieval.score_question(item("q4", None), trace("q4", [], cited=[]), k_values=(5,))
+    agg = retrieval.aggregate([r], k_values=(5,))
+
+    assert agg["scorable"] == 0
+    assert agg["unscorable_no_reference"] == 1
+    assert agg["page_citation_accuracy"] is None      # no denominator, not zero
+    assert agg["no_citation_rate"] is None

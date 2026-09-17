@@ -105,35 +105,144 @@ runs/<run_id>/
 
 ## Metrics
 
-**Retrieval** — deterministic, no judge:
+Every metric is a **pure function over traces** — no I/O, no network, no files —
+so each is unit-tested against synthetic traces whose correct score is known by
+construction.
 
-| Metric | Definition |
+Two rules apply throughout:
+
+- **Questions with no golden reference are excluded from the denominator**, not
+  scored as misses. One golden row (`tp-0100`) has no `Reference`. Every metric
+  reports its own `scorable` count, and returns `None` rather than `0.0` when
+  there is nothing to score — an absent metric and a metric that is genuinely
+  zero are different facts.
+- **An empty retrieval is a miss, not missing data.** If the RAG returns no
+  chunks, or the adapter errored, the question still failed to find its
+  evidence and scores zero.
+
+### Retrieval — deterministic, no judge
+
+Let `G` = the question's gold `SourceRef` (sitting + pages), `C₁..C_k` the top-k
+retrieved chunks in rank order, and `N` the number of scorable questions.
+
+| Metric | Formula |
 |---|---|
-| `hit_rate@k` | ≥1 of the top-k chunks comes from the correct sitting |
-| `recall@k` | a top-k chunk carries a **gold page** of the correct sitting |
-| `mrr` | mean reciprocal rank of the first correct-sitting chunk |
-| `page_citation_accuracy` | the answer's cited `ms.` matches the Excel page |
+| `hit_rate@k` | `|{q : ∃ i≤k, sitting(Cᵢ) = sitting(G)}| / N` |
+| `recall@k` | `|{q : ∃ i≤k, sitting(Cᵢ) = sitting(G) ∧ page(Cᵢ) ∈ pages(G)}| / N` |
+| `mrr` | `(1/N) · Σ 1/rank(first chunk whose sitting = sitting(G))`, 0 if none |
+| `page_citation_accuracy` | `|{q : cited page ∈ pages(G) for the gold sitting}| / N` |
+| `sitting_citation_accuracy` | `|{q : any cited source is the gold sitting}| / N` |
+| `no_citation_rate` | `|{q : the answer cited nothing}| / N` |
 
-Two rules that change how the numbers read:
+**Worked example — `tp-0003`**, gold `dr_2026-06-22, ms. 9`:
 
-1. Questions with **no golden reference** are excluded from the denominator, not
-   scored as misses. Every metric reports its own `scorable` count.
-2. A chunk whose metadata lost `sitting_id`/`page` can never match. That is an
-   **ingestion** defect, not a retrieval failure, so `metadata_health` reports it
-   separately and the scorecard raises a warning below 95% coverage. Check
-   `ingest-check` before believing a bad hit-rate.
-3. `recall@k` and `page_citation_accuracy` compare a chunk's page against the
-   Excel `ms.` — and those are **different numbers**. `ms.` is the page printed
-   on the page; the chunk carries nv-ingest's physical page index. Run
-   `page-map-check` to confirm the mapping holds before trusting either metric.
+```
+rank 1  dn_2026-02-26  page 4    ← wrong sitting
+rank 2  dr_2026-06-22  page 15   ← right sitting, wrong page
+rank 3  dr_2026-06-22  page 9    ← right sitting, gold page
+cited:  dr_2026-06-22, ms. 9
+```
 
-**Generation** — from the judge panel: `faithfulness`, `correctness`,
-`completeness`, `citation_accuracy` (1–5 each), plus `hallucination_rate`
-(fraction with faithfulness < 3).
+```
+hit_rate@1  = 0     first chunk is the wrong sitting
+hit_rate@3  = 1     a gold-sitting chunk appears within the top 3
+recall@1    = 0     no gold page in the top 1
+recall@3    = 1     rank 3 carries page 9
+mrr         = 1/2   first gold-sitting chunk is at rank 2
+page_citation_accuracy = 1   the cited ms. 9 is a gold page
+```
 
-**Ops** — `p50/p95/p99` latency, tokens, estimated cost per query, error rate.
-Cost is `None`, never `0`, when a service reports no token usage: an unknown
-cost that renders as free is worse than no number.
+**Page matching is an intersection test, not set equality.** The Excel reference
+is often a range (`ms. 15-16`); an answer citing page 15 of it is correct, and
+demanding the full range would score correct behaviour as a miss.
+
+#### Citation outcomes
+
+`page_citation_accuracy` alone cannot tell you *why* it is low, so every
+question is also classified:
+
+| status | meaning |
+|---|---|
+| `page_match` | right sitting **and** a gold page |
+| `sitting_only` | right sitting, wrong page — retrieval or chunking |
+| `wrong` | cited something, none of it the gold sitting |
+| `none` | **cited nothing at all** |
+
+`none` **counts as a miss** in `page_citation_accuracy` — failing to cite is a
+failure to cite correctly, and excluding it would flatter a RAG that simply
+stopped citing. But it is *also* reported as `no_citation_rate` and in
+`citation_breakdown`, because it calls for a different fix: no retrieval tuning
+repairs a RAG that is not emitting citations. The scorecard raises a warning
+whenever it is non-zero.
+
+```
+page_citation_accuracy  0.781      289 / 370
+no_citation_rate        0.032       12 / 370
+citation_breakdown      {page_match: 289, sitting_only: 51, wrong: 18, none: 12}
+```
+
+The breakdown always sums to `scorable`.
+
+#### When metadata is missing
+
+A chunk whose metadata lost `sitting_id`/`page` can never match. That is an
+**ingestion** defect, not a retrieval failure, so `metadata_health` reports it
+separately and the scorecard warns below 95% coverage. Check `ingest-check`
+before believing a bad hit-rate, and `page-map-check` before believing a bad
+`page_citation_accuracy`.
+
+### Generation — from the judge panel
+
+Each dimension is scored 1–5 by every panel member and aggregated by majority
+vote (see below). Let `J` = questions with a final score for that dimension.
+
+| Metric | Formula |
+|---|---|
+| `faithfulness`, `correctness`, `completeness`, `citation_accuracy` | `mean(final score)` over `J` |
+| `<dimension>_pass_rate` | `|{q : score ≥ pass_threshold}| / |J|`, default threshold 4 |
+| `hallucination_rate` | `|{q : faithfulness < hallucination_threshold}| / |J|`, default threshold 3 |
+| `empty_answer_rate` | `|{q : no answer text}| / |all questions|` |
+
+**Worked example** — four judged questions with faithfulness `5, 4, 2, 1`:
+
+```
+faithfulness            = (5+4+2+1)/4 = 3.0
+faithfulness_pass_rate  = |{5,4}| / 4 = 0.5     (≥ 4)
+hallucination_rate      = |{2,1}| / 4 = 0.5     (< 3)
+```
+
+Human adjudication overrides the panel wherever it exists, and the aggregate
+always reports `awaiting_human_review` so a mean cannot quietly hide 40 split
+rows. Unjudged questions — an adapter error, or every judge failing — are
+counted in `unjudged` and excluded from the means rather than scored as zero.
+
+### Ops
+
+| Metric | Formula |
+|---|---|
+| `latency_ms.p50 / p95 / p99` | linear-interpolated percentile over **successful** traces |
+| `error_rate` | `|{q : trace.error}| / |all questions|` |
+| `tokens.mean_per_query` | `(Σ prompt + Σ completion) / |successful|` |
+| `cost_usd.rag_total` | `(Σ prompt/1000)·input_rate + (Σ completion/1000)·output_rate` |
+| `cost_usd.rag_per_query` | `rag_total / |successful|` |
+
+**Worked example** — two successful queries at 100 ms and 300 ms, each 100
+prompt + 20 completion tokens, rates $1.00/1k input and $2.00/1k output, plus
+one errored query:
+
+```
+error_rate   = 1/3   = 0.333
+p50 latency  = 200 ms         the errored query has no latency and is excluded
+rag_total    = (200/1000 × 1.00) + (40/1000 × 2.00) = $0.28
+rag_per_query= 0.28 / 2 = $0.14
+```
+
+**Failed traces never pollute latency** — a 30-second timeout would otherwise
+dominate p95 while telling you nothing about how fast the service answers.
+
+**Cost is `None`, never `0`, when a service reports no token usage.** An unknown
+cost rendered as free is worse than no number at all. Judge cost is accounted
+separately under `ops.judge`, since the panel is roughly 3× a single judge.
 
 ## The judge panel
 

@@ -24,6 +24,14 @@ from typing import Any, Iterable, Sequence
 from rag_eval.types import GoldenItem, RagTrace, RetrievedChunk, SourceRef
 
 
+#: Outcomes for a question's citation, in descending order of correctness.
+CITATION_PAGE = "page_match"      # cited the right sitting *and* a gold page
+CITATION_SITTING = "sitting_only"  # right sitting, wrong page
+CITATION_WRONG = "wrong"           # cited something, none of it the gold sitting
+CITATION_NONE = "none"             # cited nothing at all
+CITATION_STATUSES = (CITATION_PAGE, CITATION_SITTING, CITATION_WRONG, CITATION_NONE)
+
+
 @dataclass
 class RetrievalResult:
     """Per-question retrieval outcome, kept so a scorecard row can be explained."""
@@ -39,6 +47,12 @@ class RetrievalResult:
     cited_sittings: list[str] = field(default_factory=list)
     citation_sitting_match: bool = False
     citation_page_match: bool = False
+    #: Why the citation scored as it did. "no citation at all" is a distinct
+    #: finding from "cited the wrong page": the first means the RAG is not
+    #: producing citations, which no amount of retrieval tuning fixes, while
+    #: the second points at retrieval or chunking. Collapsing them hides which
+    #: problem you have.
+    citation_status: str = CITATION_NONE
     retrieved_chunks: int = 0
     chunks_missing_metadata: int = 0
 
@@ -55,6 +69,7 @@ class RetrievalResult:
             "cited_sittings": list(self.cited_sittings),
             "citation_sitting_match": self.citation_sitting_match,
             "citation_page_match": self.citation_page_match,
+            "citation_status": self.citation_status,
             "retrieved_chunks": self.retrieved_chunks,
             "chunks_missing_metadata": self.chunks_missing_metadata,
         }
@@ -69,6 +84,22 @@ def _chunk_matches_page(chunk: RetrievedChunk, sitting_id: str, pages: Sequence[
         return False
     # No gold page recorded -> the correct sitting is the strongest claim we can make.
     return chunk.page in pages if pages else True
+
+
+def citation_status(cited: Sequence[SourceRef], gold: SourceRef) -> str:
+    """Classify a question's citation into one of :data:`CITATION_STATUSES`.
+
+    ``none`` is reported separately rather than folded into the failures,
+    because "the RAG did not cite" and "the RAG cited the wrong page" call for
+    different fixes. It still counts as a miss in ``page_citation_accuracy`` --
+    excluding it would flatter a RAG that simply stopped citing.
+    """
+    if not cited:
+        return CITATION_NONE
+    sitting_ok, page_ok = citation_matches(cited, gold)
+    if page_ok:
+        return CITATION_PAGE
+    return CITATION_SITTING if sitting_ok else CITATION_WRONG
 
 
 def citation_matches(
@@ -129,6 +160,7 @@ def score_question(
     result.citation_sitting_match, result.citation_page_match = citation_matches(
         trace.cited_sources, gold
     )
+    result.citation_status = citation_status(trace.cited_sources, gold)
     return result
 
 
@@ -155,12 +187,18 @@ def aggregate(
     metrics["mrr"] = (
         round(sum(r.reciprocal_rank for r in scorable) / n, 4) if n else None
     )
+    # Questions that cited nothing stay in the denominator -- failing to cite
+    # is a failure to cite correctly -- but are also reported on their own so
+    # the two failure modes can be told apart.
     metrics["page_citation_accuracy"] = _rate(
         sum(1 for r in scorable if r.citation_page_match), n
     )
     metrics["sitting_citation_accuracy"] = _rate(
         sum(1 for r in scorable if r.citation_sitting_match), n
     )
+    breakdown = {s: sum(1 for r in scorable if r.citation_status == s) for s in CITATION_STATUSES}
+    metrics["citation_breakdown"] = breakdown
+    metrics["no_citation_rate"] = _rate(breakdown[CITATION_NONE], n)
     metrics["metadata_health"] = metadata_health(results)
     return metrics
 

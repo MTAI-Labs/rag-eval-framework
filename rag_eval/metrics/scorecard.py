@@ -176,6 +176,16 @@ def _warnings(card: Scorecard) -> list[str]:
             f"Run 'rag-eval ingest-check' before trusting them."
         )
 
+    uncited = card.retrieval.get("no_citation_rate")
+    if uncited:
+        n = (card.retrieval.get("citation_breakdown") or {}).get("none", 0)
+        out.append(
+            f"{n} question(s) ({uncited:.1%}) produced no citation at all. They count as "
+            f"misses in page_citation_accuracy, but this is a different fault from citing "
+            f"the wrong page — check whether the RAG is emitting citations before tuning "
+            f"retrieval."
+        )
+
     unscorable = card.retrieval.get("unscorable_no_reference", 0)
     if unscorable:
         out.append(

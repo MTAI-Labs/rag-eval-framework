@@ -67,3 +67,24 @@ def test_empty_run_reports_none_rather_than_dividing_by_zero():
     metrics = ops.aggregate([])
     assert metrics["error_rate"] is None
     assert metrics["latency_ms"]["p95"] is None
+
+
+def test_a_run_where_everything_failed_reports_100_percent_error_rate():
+    traces = [trace(f"q{i}", [], error="HTTP 503") for i in range(3)]
+    metrics = ops.aggregate(traces)
+
+    assert metrics["error_rate"] == 1.0
+    assert metrics["succeeded"] == 0
+    # No successful call means no latency to report — None, not a misleading 0.
+    assert metrics["latency_ms"]["p50"] is None
+    assert metrics["latency_ms"]["measured"] == 0
+
+
+def test_a_trace_with_no_latency_recorded_is_not_counted_as_zero():
+    from rag_eval.types import RagTrace
+    fast = timed("q1", 100.0)
+    unmeasured = RagTrace(question_id="q2", question="?", adapter="mock")
+    metrics = ops.aggregate([fast, unmeasured])
+
+    assert metrics["latency_ms"]["measured"] == 1
+    assert metrics["latency_ms"]["p50"] == 100.0   # not dragged toward zero

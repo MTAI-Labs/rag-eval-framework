@@ -90,3 +90,24 @@ def test_per_judge_scores_expose_a_drifting_panel_member():
     assert stats["judge-1"]["mean_scores"]["faithfulness"] == 5.0
     assert stats["judge-3"]["mean_scores"]["faithfulness"] == 1.0
     assert stats["judge-3"]["failure_rate"] == 0.0
+
+
+def test_a_run_with_no_judgements_reports_none_not_zero():
+    # Nothing judged yet is not the same as everything scoring zero.
+    metrics = generation.aggregate([])
+
+    assert metrics["questions"] == 0
+    assert metrics["judged"] == 0
+    assert metrics["faithfulness"] is None
+    assert metrics["hallucination_rate"] is None
+
+
+def test_hallucination_rate_ignores_unjudged_questions():
+    from rag_eval.judges.rubric import PanelVerdict
+    verdicts = [verdict("q1", {**BASE, "faithfulness": 1}),
+                PanelVerdict(question_id="q2", error="adapter error, not judged: boom")]
+    metrics = generation.aggregate(verdicts)
+
+    # 1 of 1 judged answers hallucinated — the unjudged one must not halve it.
+    assert metrics["hallucination_rate"] == 1.0
+    assert metrics["unjudged"] == 1
