@@ -36,6 +36,7 @@ class ChatClient(Protocol):
         *,
         temperature: float = 0.0,
         max_tokens: int = 1024,
+        enable_thinking: bool = False,
     ) -> ChatResponse: ...
 
 
@@ -59,13 +60,18 @@ class ThothChatClient:
         *,
         temperature: float = 0.0,
         max_tokens: int = 1024,
+        enable_thinking: bool = False,
     ) -> ChatResponse:
+        # enable_thinking is a gateway extension, not part of the OpenAI schema,
+        # so it travels in extra_body. Sent explicitly either way rather than
+        # relying on the server default, which differs per model.
         response = self._client.chat.completions.create(
             model=model,
             messages=messages,  # type: ignore[arg-type]
             temperature=temperature,
             max_tokens=max_tokens,
             response_format={"type": "json_object"},
+            extra_body={"enable_thinking": enable_thinking},
         )
         usage = getattr(response, "usage", None)
         choice = response.choices[0] if response.choices else None
@@ -99,6 +105,7 @@ class ScriptedChatClient:
         *,
         temperature: float = 0.0,
         max_tokens: int = 1024,
+        enable_thinking: bool = False,
     ) -> ChatResponse:
         self.calls.append((model, messages))
         handler = self.responses.get(model, self.default)

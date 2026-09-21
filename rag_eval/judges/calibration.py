@@ -9,12 +9,14 @@ agreement with humans becomes a tracked number rather than an assumption.
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from rag_eval.judges.rubric import DIMENSIONS, PanelVerdict, clamp
+from rag_eval.types import GoldenItem
 
 DEFAULT_PATH = Path("datasets/judge_calibration.jsonl")
 
@@ -54,6 +56,100 @@ class CalibrationSample:
             run_id=d.get("run_id", ""),
             notes=d.get("notes", ""),
         )
+
+
+#: Column order for the labelling sheet.
+#:
+#: The material to read comes first, then the human's own scores, and the
+#: panel's scores last. That ordering is deliberate: a labeller who sees the
+#: judges' answers before forming their own is anchored by them, and the whole
+#: point of calibration is an independent opinion to measure the panel against.
+CSV_COLUMNS = [
+    "question_id", "owner", "sitting_id", "golden_ms",
+    "question", "expected_answer", "generated_answer", "retrieved_context",
+    "human_faithfulness", "human_correctness", "human_completeness",
+    "human_citation_accuracy", "labelled_by", "notes",
+    "panel_faithfulness", "panel_correctness", "panel_completeness",
+    "panel_citation_accuracy", "flagged_dimensions", "judges_responded",
+    "judge_rationales", "adapter_error",
+]
+
+
+def sheet_to_rows(sheet: dict[str, Any]) -> list[dict[str, str]]:
+    """Flatten a calibration sheet into CSV-shaped rows."""
+    out = []
+    for r in sheet.get("rows", []):
+        context = "\n\n".join(
+            f"[{c['rank']}] {c.get('sitting_id')} p.{c.get('page')}: {c.get('text', '')}"
+            for c in r.get("retrieved", [])
+        )
+        rationales = "\n\n".join(
+            f"{m}: {t}" for m, t in (r.get("judge_rationales") or {}).items()
+        )
+        panel = r.get("panel_scores") or {}
+        human = r.get("human_scores") or {}
+        row = {
+            "question_id": r.get("question_id", ""),
+            "owner": r.get("owner", ""),
+            "sitting_id": r.get("sitting_id") or "",
+            "golden_ms": ", ".join(str(p) for p in (r.get("golden_ms") or [])),
+            "question": r.get("question", ""),
+            "expected_answer": r.get("expected_answer", ""),
+            "generated_answer": r.get("generated_answer", ""),
+            "retrieved_context": context,
+            "labelled_by": r.get("labelled_by", ""),
+            "notes": r.get("notes", ""),
+            "flagged_dimensions": ", ".join(r.get("flagged_dimensions") or []),
+            "judges_responded": str(len(r.get("judge_scores") or {})),
+            "judge_rationales": rationales,
+            "adapter_error": r.get("adapter_error") or "",
+        }
+        for d in DIMENSIONS:
+            row[f"human_{d}"] = "" if human.get(d) is None else str(human[d])
+            row[f"panel_{d}"] = "" if panel.get(d) is None else str(panel[d])
+        out.append(row)
+    return out
+
+
+def _normalise_keys(row: dict[str, Any]) -> dict[str, Any]:
+    """Accept both ``human_faithfulness`` and ``human faithfulness``.
+
+    The .xlsx workbook prettifies headers for people, so a CSV exported back out
+    of Excel carries spaces where the machine-written CSV has underscores.
+    Tolerating both means a sheet labelled in a spreadsheet imports without
+    anyone having to rename columns — and without silently finding no labels.
+    """
+    return {str(k).strip().lower().replace(" ", "_"): v for k, v in row.items() if k}
+
+
+def rows_to_samples(rows: Sequence[dict[str, Any]], labelled_by: str = "") -> list[CalibrationSample]:
+    """Read human scores back out of a filled-in CSV.
+
+    A row with no scores is skipped rather than recorded as blank — an
+    unlabelled row must not look like a label.
+    """
+    samples = []
+    for raw_row in rows:
+        row = _normalise_keys(raw_row)
+        scores: dict[str, int] = {}
+        for d in DIMENSIONS:
+            raw = str(row.get(f"human_{d}") or "").strip()
+            if raw:
+                value = clamp(raw)
+                if value is not None:
+                    scores[d] = value
+        if not scores:
+            continue
+        samples.append(CalibrationSample(
+            question_id=str(row.get("question_id", "")).strip(),
+            human_scores=scores,
+            panel_scores={d: int(row[f"panel_{d}"]) for d in DIMENSIONS
+                          if str(row.get(f"panel_{d}") or "").strip().isdigit()},
+            labelled_by=str(row.get("labelled_by") or labelled_by).strip(),
+            notes=str(row.get("notes") or "").strip(),
+            source="manual",
+        ))
+    return samples
 
 
 def load_calibration(path: str | Path = DEFAULT_PATH) -> list[CalibrationSample]:
@@ -108,6 +204,104 @@ def samples_from_adjudications(
         for v in verdicts
         if v.human_scores
     ]
+
+
+def stratified_sample(
+    items: Sequence[GoldenItem], size: int, *, seed: int = 0
+) -> list[GoldenItem]:
+    """Pick ``size`` questions spread across owners *and* sittings.
+
+    Calibration measures whether the panel agrees with humans in general, so a
+    sample drawn from one reviewer or one sitting would calibrate against that
+    reviewer's habits rather than the rubric. Cells are visited round-robin so
+    small strata are represented rather than swamped by large ones, and the
+    order is seeded for reproducibility -- the same corpus yields the same
+    sheet, which matters when a calibration result is challenged later.
+    """
+    cells: dict[tuple[str, str], list[GoldenItem]] = {}
+    for item in items:
+        owner = (item.owner or "(unassigned)").strip()
+        sitting = item.reference.sitting_id if item.reference else "(no reference)"
+        cells.setdefault((owner, sitting), []).append(item)
+
+    rng = random.Random(seed)
+    for bucket in cells.values():
+        rng.shuffle(bucket)
+
+    chosen: list[GoldenItem] = []
+    order = sorted(cells)
+    depth = 0
+    while len(chosen) < size and any(len(cells[k]) > depth for k in order):
+        for key in order:
+            if depth < len(cells[key]):
+                chosen.append(cells[key][depth])
+                if len(chosen) >= size:
+                    break
+        depth += 1
+    return chosen
+
+
+def sample_coverage(items: Sequence[GoldenItem]) -> dict[str, Any]:
+    """How a sample is spread, so a skewed one is visible before anyone labels it."""
+    owners: dict[str, int] = {}
+    sittings: dict[str, int] = {}
+    for item in items:
+        owners[(item.owner or "(unassigned)")] = owners.get(item.owner or "(unassigned)", 0) + 1
+        key = item.reference.sitting_id if item.reference else "(no reference)"
+        sittings[key] = sittings.get(key, 0) + 1
+    return {"size": len(items), "owners": dict(sorted(owners.items())),
+            "sittings": dict(sorted(sittings.items()))}
+
+
+def inter_judge_agreement(verdicts: Sequence[PanelVerdict]) -> dict[str, Any]:
+    """How much the judges agree with *each other*, independent of any human.
+
+    Distinct from panel-human agreement and worth reading alongside it: judges
+    that agree closely with each other but poorly with humans indicate a rubric
+    problem shared by all three, which is the case the spec says to fix by
+    tuning the prompt rather than swapping judges.
+    """
+    pairs: dict[str, dict[str, int]] = {}
+    per_dimension: dict[str, dict[str, Any]] = {}
+
+    for dimension in DIMENSIONS:
+        exact = within1 = total = 0
+        for v in verdicts:
+            scored = [(j.model, j.scores[dimension]) for j in v.verdicts
+                      if j.ok and dimension in j.scores]
+            for i in range(len(scored)):
+                for k in range(i + 1, len(scored)):
+                    (m1, s1), (m2, s2) = scored[i], scored[k]
+                    key = " vs ".join(sorted((m1, m2)))
+                    cell = pairs.setdefault(key, {"compared": 0, "exact": 0, "within_1": 0})
+                    cell["compared"] += 1
+                    cell["exact"] += s1 == s2
+                    cell["within_1"] += abs(s1 - s2) <= 1
+                    total += 1
+                    exact += s1 == s2
+                    within1 += abs(s1 - s2) <= 1
+        per_dimension[dimension] = {
+            "pairs_compared": total,
+            "exact_agreement": round(exact / total, 4) if total else None,
+            "within_1": round(within1 / total, 4) if total else None,
+        }
+
+    for key, cell in pairs.items():
+        n = cell.pop("compared")
+        pairs[key] = {
+            "compared": n,
+            "exact_agreement": round(cell["exact"] / n, 4) if n else None,
+            "within_1": round(cell["within_1"] / n, 4) if n else None,
+        }
+
+    flagged = sum(1 for v in verdicts if v.flagged_dimensions)
+    return {
+        "questions": len(verdicts),
+        "flagged_questions": flagged,
+        "flagged_rate": round(flagged / len(verdicts), 4) if verdicts else None,
+        "per_dimension": per_dimension,
+        "per_pair": dict(sorted(pairs.items())),
+    }
 
 
 def agreement_report(
@@ -172,9 +366,19 @@ def agreement_report(
             "mean_bias": round(bias / n, 4) if n else None,
         }
 
+    overall = [
+        (d, per_dimension[d]["within_1"]) for d in DIMENSIONS
+        if per_dimension[d]["within_1"] is not None
+    ]
+    headline = round(sum(v for _, v in overall) / len(overall), 4) if overall else None
+
     return {
         "labelled_samples": len(labelled),
         "calibration_set_size": len(samples),
+        "panel_human_agreement": headline,
+        "target": 0.8,
+        "meets_target": (headline is not None and headline >= 0.8),
         "per_dimension": per_dimension,
         "per_judge": per_judge,
+        "inter_judge": inter_judge_agreement([by_id[s.question_id] for s in labelled]),
     }

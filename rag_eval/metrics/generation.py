@@ -19,6 +19,49 @@ from rag_eval.types import RagTrace
 
 JUDGED_DIMENSIONS = ("faithfulness", "correctness", "completeness")
 
+#: Phrases that mark a model narrating its own instructions rather than
+#: answering. A reasoning model with thinking left on emits its chain-of-thought
+#: as the response; judges then score that near-perfect on faithfulness because
+#: it contradicts nothing, so nothing downstream catches it. Cheap to detect and
+#: worth catching before a run, not after.
+_REASONING_MARKERS = (
+    "we need", "need answer", "the user is asking", "the user asks",
+    "user wants", "let me ", "i need to", "i should", "context only",
+    "need follow instructions", "okay, ", "first, i", "let's ",
+    "the question asks", "we must", "i'll ",
+)
+
+
+def looks_like_reasoning(answer: str, *, window: int = 300) -> bool:
+    """Whether an answer is the model thinking out loud instead of answering.
+
+    Checked against the opening of the text: a genuine answer may later discuss
+    what a speaker said they needed to do, but it does not *begin* by narrating
+    the task. Deliberately conservative -- a false positive would wrongly
+    discredit a real answer.
+    """
+    head = (answer or "").strip().lower()[:window]
+    return any(marker in head for marker in _REASONING_MARKERS)
+
+
+def answer_quality(traces: Sequence[RagTrace]) -> dict[str, Any]:
+    """How many answers are real answers, before anyone scores them.
+
+    A RAG emitting reasoning is not a low-quality RAG -- it is a misconfigured
+    one, and no judge score computed over it means anything.
+    """
+    answered = [t for t in traces if t.ok and (t.generated_answer or "").strip()]
+    leaked = [t for t in answered if looks_like_reasoning(t.generated_answer)]
+    return {
+        "traces": len(traces),
+        "answered": len(answered),
+        "reasoning_leaked": len(leaked),
+        "reasoning_leak_rate": (
+            round(len(leaked) / len(answered), 4) if answered else None
+        ),
+        "examples": [t.question_id for t in leaked[:5]],
+    }
+
 
 @dataclass
 class GenerationResult:

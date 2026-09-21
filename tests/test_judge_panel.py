@@ -157,3 +157,202 @@ def test_the_prompt_carries_the_golden_reference_and_the_retrieved_context():
     prompt = client.calls[0][1][1]["content"]
     assert "dr_2026-06-22" in prompt
     assert GOLD.expected_answer in prompt
+
+
+# -- calibration sampling and inter-judge agreement ------------------------
+def test_stratified_sample_spreads_across_owners_and_sittings():
+    from rag_eval.judges.calibration import sample_coverage, stratified_sample
+    from conftest import item as mk
+
+    items = []
+    for owner, sitting in (("Sofia", ("dr", "2026-06-22")), ("Amirah", ("dn", "2026-08-04")),
+                           ("Syahir", ("kkdr", "2026-07-14"))):
+        for i in range(20):
+            g = mk(f"{owner}-{i}", ref(*sitting, 1))
+            g.owner = owner
+            items.append(g)
+
+    chosen = stratified_sample(items, 9)
+    cov = sample_coverage(chosen)
+    # A sample drawn from one reviewer would calibrate against that reviewer's
+    # habits rather than the rubric.
+    assert set(cov["owners"]) == {"Sofia", "Amirah", "Syahir"}
+    assert all(n == 3 for n in cov["owners"].values())
+    assert len(cov["sittings"]) == 3
+
+
+def test_stratified_sample_is_reproducible():
+    from rag_eval.judges.calibration import stratified_sample
+    from conftest import item as mk
+    items = [mk(f"q{i}", ref("dr", "2026-06-22", 1)) for i in range(30)]
+    assert [i.id for i in stratified_sample(items, 10, seed=7)] == \
+           [i.id for i in stratified_sample(items, 10, seed=7)]
+
+
+def test_stratified_sample_handles_a_stratum_smaller_than_its_share():
+    from rag_eval.judges.calibration import sample_coverage, stratified_sample
+    from conftest import item as mk
+    items = []
+    for i in range(20):
+        g = mk(f"big-{i}", ref("dr", "2026-06-22", 1)); g.owner = "Sofia"; items.append(g)
+    g = mk("tiny-0", ref("kr", "2026-07-14", 1)); g.owner = "Syahir"; items.append(g)
+
+    cov = sample_coverage(stratified_sample(items, 10))
+    assert cov["owners"]["Syahir"] == 1      # represented, not swamped
+    assert cov["size"] == 10
+
+
+def test_inter_judge_agreement_is_measured_without_human_labels():
+    from rag_eval.judges.calibration import inter_judge_agreement
+    unanimous = panel({"a": scores(4), "b": scores(4), "c": scores(4)}).judge_one(GOLD, TRACE)
+    split = panel({"a": scores(5), "b": scores(3), "c": scores(1)}).judge_one(GOLD, TRACE)
+
+    report = inter_judge_agreement([unanimous, split])
+    assert report["questions"] == 2
+    assert report["flagged_questions"] == 1
+    assert report["per_dimension"]["faithfulness"]["pairs_compared"] == 6   # 3 pairs x 2 rows
+    assert 0.0 < report["per_dimension"]["faithfulness"]["exact_agreement"] < 1.0
+    assert report["per_pair"]
+
+
+def test_agreement_report_states_whether_it_meets_the_target():
+    from rag_eval.judges.calibration import CalibrationSample, agreement_report
+    v = panel({"a": scores(4), "b": scores(4), "c": scores(4)}).judge_one(GOLD, TRACE)
+    perfect = CalibrationSample(question_id="q1", human_scores={d: 4 for d in DIMENSIONS})
+
+    report = agreement_report([v], [perfect])
+    assert report["panel_human_agreement"] == 1.0
+    assert report["target"] == 0.8
+    assert report["meets_target"] is True
+    assert "inter_judge" in report
+
+
+# -- CSV labelling round-trip ---------------------------------------------
+def _sheet(**over):
+    row = {"question_id": "tp-0001", "owner": "Sofia", "sitting_id": "dr_2026-06-22",
+           "golden_ms": [3], "question": "Who resigned?", "expected_answer": "Pandan.",
+           "generated_answer": "Pandan dan Setiawangsa.",
+           "retrieved": [{"rank": 1, "sitting_id": "dr_2026-06-22", "page": 9, "text": "…"}],
+           "panel_scores": {d: 4 for d in DIMENSIONS},
+           "judge_scores": {"a": {d: 4 for d in DIMENSIONS}},
+           "judge_rationales": {"a": "because"}, "flagged_dimensions": [],
+           "human_scores": {d: None for d in DIMENSIONS},
+           "labelled_by": "", "notes": "", "adapter_error": None}
+    row.update(over)
+    return {"rows": [row]}
+
+
+def test_csv_puts_the_panel_scores_after_the_human_columns():
+    from rag_eval.judges.calibration import CSV_COLUMNS
+    # A labeller who sees the judges' answers first is anchored by them, which
+    # defeats the point of an independent opinion.
+    human_at = min(CSV_COLUMNS.index(f"human_{d}") for d in DIMENSIONS)
+    panel_at = min(CSV_COLUMNS.index(f"panel_{d}") for d in DIMENSIONS)
+    content_at = CSV_COLUMNS.index("generated_answer")
+    assert content_at < human_at < panel_at
+
+
+def test_sheet_flattens_to_csv_rows():
+    from rag_eval.judges.calibration import sheet_to_rows
+    row = sheet_to_rows(_sheet())[0]
+    assert row["question_id"] == "tp-0001"
+    assert row["golden_ms"] == "3"
+    assert row["human_faithfulness"] == ""        # blank, awaiting a person
+    assert row["panel_faithfulness"] == "4"
+    assert "dr_2026-06-22 p.9" in row["retrieved_context"]
+
+
+def test_filled_csv_rows_become_calibration_samples():
+    from rag_eval.judges.calibration import rows_to_samples, sheet_to_rows
+    row = sheet_to_rows(_sheet())[0]
+    row.update({"human_faithfulness": "5", "human_correctness": "3",
+                "human_completeness": "4", "human_citation_accuracy": "2"})
+    samples = rows_to_samples([row], labelled_by="Sofia")
+
+    assert len(samples) == 1
+    assert samples[0].human_scores == {"faithfulness": 5, "correctness": 3,
+                                       "completeness": 4, "citation_accuracy": 2}
+    assert samples[0].labelled_by == "Sofia"
+
+
+def test_an_unlabelled_row_is_skipped_not_recorded_as_blank():
+    from rag_eval.judges.calibration import rows_to_samples, sheet_to_rows
+    assert rows_to_samples(sheet_to_rows(_sheet())) == []
+
+
+def test_a_partially_labelled_row_keeps_what_was_scored():
+    from rag_eval.judges.calibration import rows_to_samples, sheet_to_rows
+    row = sheet_to_rows(_sheet())[0]
+    row["human_faithfulness"] = "5"        # only one dimension scored
+    samples = rows_to_samples([row])
+    assert samples[0].human_scores == {"faithfulness": 5}
+
+
+def test_out_of_range_labels_are_clamped_to_the_rubric_scale():
+    from rag_eval.judges.calibration import rows_to_samples, sheet_to_rows
+    row = sheet_to_rows(_sheet())[0]
+    row.update({"human_faithfulness": "9", "human_correctness": "0"})
+    scores = rows_to_samples([row])[0].human_scores
+    assert scores["faithfulness"] == 5 and scores["correctness"] == 1
+
+
+# -- the labelling workbook ------------------------------------------------
+def test_workbook_hides_the_panel_scores(tmp_path):
+    from openpyxl import load_workbook
+    from rag_eval.judges.workbook import write_workbook
+
+    path, n = write_workbook(_sheet(), tmp_path / "s.xlsx")
+    ws = load_workbook(path)["labelling"]
+    headers = [c.value for c in ws[1]]
+    hidden = {k for k, v in ws.column_dimensions.items() if v.hidden}
+    from openpyxl.utils import get_column_letter
+    pretty = {h.replace("_", " ") if h else h: i for i, h in enumerate(headers)}
+    panel_cols = {get_column_letter(pretty[f"panel {d}".replace("_", " ")] + 1)
+                  for d in DIMENSIONS}
+    human_cols = {get_column_letter(pretty[f"human {d}".replace("_", " ")] + 1)
+                  for d in DIMENSIONS}
+
+    assert n == 1
+    assert panel_cols <= hidden       # anchoring is the thing being prevented
+    assert not (human_cols & hidden)  # the columns to fill must be visible
+
+
+def test_workbook_assigns_labellers_round_robin(tmp_path):
+    from openpyxl import load_workbook
+    from rag_eval.judges.workbook import write_workbook
+
+    sheet = {"rows": _sheet()["rows"] * 7}
+    path, _ = write_workbook(sheet, tmp_path / "s.xlsx", labellers=["A", "B", "C"])
+    ws = load_workbook(path)["labelling"]
+    assigned = [ws.cell(r, 1).value for r in range(2, 9)]
+    # Interleaved, not blocked: the sample is ordered by owner, so contiguous
+    # blocks would give one labeller mostly one reviewer's questions.
+    assert assigned == ["A", "B", "C", "A", "B", "C", "A"]
+
+
+def test_a_workbook_exported_back_to_csv_still_imports(tmp_path):
+    # Excel keeps the prettified headers ("human faithfulness"), so an importer
+    # that only accepts underscores would silently find no labels at all.
+    from rag_eval.judges.calibration import rows_to_samples
+    spaced = {"question id": "tp-0001", "human faithfulness": "5",
+              "human correctness": "4", "human completeness": "3",
+              "human citation accuracy": "2", "labelled by": "Sofia"}
+    samples = rows_to_samples([spaced])
+
+    assert len(samples) == 1
+    assert samples[0].question_id == "tp-0001"
+    assert samples[0].human_scores == {"faithfulness": 5, "correctness": 4,
+                                       "completeness": 3, "citation_accuracy": 2}
+
+
+def test_workbook_carries_a_rubric_tab(tmp_path):
+    from openpyxl import load_workbook
+    from rag_eval.judges.workbook import write_workbook
+
+    path, _ = write_workbook(_sheet(), tmp_path / "s.xlsx")
+    wb = load_workbook(path)
+    assert "how to label" in wb.sheetnames
+    text = " ".join(str(c.value) for row in wb["how to label"].iter_rows()
+                    for c in row if c.value)
+    for dim in DIMENSIONS:
+        assert dim in text

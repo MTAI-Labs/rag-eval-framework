@@ -189,6 +189,7 @@ class JudgePanel:
                         messages,
                         temperature=model.temperature,
                         max_tokens=model.max_tokens,
+                        enable_thinking=model.enable_thinking,
                     )
                 if not (response.text or "").strip() and response.finish_reason == "length":
                     raise JudgeParseError(

@@ -111,3 +111,51 @@ def test_hallucination_rate_ignores_unjudged_questions():
     # 1 of 1 judged answers hallucinated — the unjudged one must not halve it.
     assert metrics["hallucination_rate"] == 1.0
     assert metrics["unjudged"] == 1
+
+
+# -- answer quality: is the RAG answering, or thinking out loud? -----------
+def test_reasoning_leakage_is_detected():
+    from rag_eval.metrics.generation import looks_like_reasoning
+    # A reasoning model with thinking left on emits its chain-of-thought as the
+    # answer. Judges score that near-perfect on faithfulness because it
+    # contradicts nothing, so nothing downstream catches it.
+    assert looks_like_reasoning(
+        "We need answer user's query using context only. Need follow instructions")
+    assert looks_like_reasoning("Let me check the context for the resignation date.")
+    assert looks_like_reasoning("Okay, the user is asking about PLKN.")
+
+
+def test_a_real_answer_is_not_flagged():
+    from rag_eval.metrics.generation import looks_like_reasoning
+    # A false positive would wrongly discredit a working RAG, so detection is
+    # deliberately conservative and only looks at how the answer opens.
+    assert not looks_like_reasoning("Yang Berhormat bagi kawasan Pandan dan Setiawangsa.")
+    assert not looks_like_reasoning("Jumlah keseluruhan setakat ini adalah 3,404 orang.")
+    assert not looks_like_reasoning("")
+    # mentions the phrase late, after genuinely answering
+    assert not looks_like_reasoning(
+        "Sebanyak 108 ladang beroperasi. " + "x" * 400 + " we need to note that")
+
+
+def test_answer_quality_reports_the_leak_rate():
+    from rag_eval.metrics.generation import answer_quality
+    traces = [
+        trace("q1", [], answer="Jumlah keseluruhan adalah 3,404 orang."),
+        trace("q2", [], answer="We need answer user's query using context only."),
+        trace("q3", [], answer="Let me check the retrieved context first."),
+        trace("q4", [], error="HTTP 503"),
+    ]
+    q = answer_quality(traces)
+
+    assert q["traces"] == 4
+    assert q["answered"] == 3          # the errored trace is not an answer
+    assert q["reasoning_leaked"] == 2
+    assert q["reasoning_leak_rate"] == round(2 / 3, 4)
+    assert q["examples"] == ["q2", "q3"]
+
+
+def test_answer_quality_on_a_healthy_run_reports_zero():
+    from rag_eval.metrics.generation import answer_quality
+    q = answer_quality([trace("q1", [], answer="Tidak. MPOB tidak mengawal harga.")])
+    assert q["reasoning_leaked"] == 0
+    assert q["reasoning_leak_rate"] == 0.0

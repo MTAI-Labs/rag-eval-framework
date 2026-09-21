@@ -16,6 +16,8 @@ dependencies = []
 [project.optional-dependencies]
 judge = ["openai>=1.40"]
 dev = ["pytest>=8.0"]
+# Writing the .xlsx labelling workbook; not needed to run an eval.
+label = ["openpyxl>=3.1"]
 
 [project.scripts]
 rag-eval = "rag_eval.cli.main:main"

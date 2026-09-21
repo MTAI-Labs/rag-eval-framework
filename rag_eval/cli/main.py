@@ -9,6 +9,8 @@ Stages are deliberately separate commands over one run directory:
     rag-eval ingest-check         is the collection's metadata good enough to score?
     rag-eval page-map-check       does a chunk's page actually mean the golden ms.?
     rag-eval smoke                a few real questions through an adapter, end to end
+    rag-eval calibrate-sample     stratified sample -> panel -> sheet for a human to label
+    rag-eval calibrate-export     sheet -> CSV for labelling in a spreadsheet
     rag-eval run                  golden set -> traces.jsonl
     rag-eval judge                traces    -> judgments.jsonl
     rag-eval score                both      -> scorecard.json
@@ -53,14 +55,22 @@ from rag_eval.dataset.loader import (
     read_manifest,
 )
 from rag_eval.judges.calibration import (
+    CSV_COLUMNS,
     CalibrationSample,
+    rows_to_samples,
+    sheet_to_rows,
+    sample_coverage,
+    stratified_sample,
     agreement_report,
     append_calibration,
     load_calibration,
     samples_from_adjudications,
 )
 from rag_eval.judges.client import build_client
+from rag_eval.judges.calibration import inter_judge_agreement
 from rag_eval.judges.panel import JudgePanel, PanelUsage, flagged_rows
+from rag_eval.judges.rubric import DIMENSIONS
+from rag_eval.metrics.generation import answer_quality
 from rag_eval.metrics.scorecard import build_scorecard
 from rag_eval.reporting import compare, write_report
 from rag_eval.runner import _answer_one, ingest_check, run_dataset
@@ -700,12 +710,19 @@ def cmd_smoke(args: argparse.Namespace, config: Config) -> int:
 
     failed = [t for t in traces if not t.ok]
     answered = [t for t in traces if t.ok and t.generated_answer.strip()]
+    quality = answer_quality(traces)
     with_meta = sum(1 for t in traces
                     for c in t.retrieved_chunks if c.sitting_id and c.page is not None)
     chunks = sum(len(t.retrieved_chunks) for t in traces)
 
     _out(f"\n  succeeded    {len(traces) - len(failed)}/{len(traces)}")
     _out(f"  answered     {len(answered)}/{len(traces)}")
+    if quality["reasoning_leaked"]:
+        _out(f"  !! {quality['reasoning_leaked']}/{quality['answered']} answer(s) are the model "
+             f"THINKING OUT LOUD, not answering ({quality['examples']}).")
+        _out("     The RAG's LLM has reasoning enabled. Judges score this near-perfect on "
+             "faithfulness, so a scorecard built on it is meaningless. Fix the RAG server's "
+             "generation config before running an eval.")
     _out(f"  chunks       {chunks} ({with_meta} carry sitting id + page)")
     if failed:
         _out(f"  failures     {len(failed)}")
@@ -1017,6 +1034,163 @@ def cmd_adjudicate(args: argparse.Namespace, config: Config) -> int:
     return 2
 
 
+def cmd_calibrate_sample(args: argparse.Namespace, config: Config) -> int:
+    """Produce a labelling sheet: real traces, real panel scores, blank human scores.
+
+    Calibration compares the panel against people, so the rows must be real —
+    a sheet built from golden answers replayed as RAG answers would only show
+    the panel agreeing with itself on easy cases. Each row is an actual
+    retrieval and an actual generated answer, including the bad ones.
+    """
+    items = _load_items(args)
+    chosen = stratified_sample(items, args.size, seed=args.seed)
+    coverage = sample_coverage(chosen)
+
+    _out(f"Sample      {coverage['size']} question(s)")
+    _out(f"  owners    {coverage['owners']}")
+    _out(f"  sittings  {len(coverage['sittings'])} covered")
+    if args.dry_run:
+        _out("\nDRY RUN — no adapter or judge calls made. Drop --dry-run to build the sheet.")
+        return 0
+
+    adapter = get_adapter(args.adapter, **_adapter_options(config, args))
+    panel = _judge_panel(config, args.offline_judge)
+
+    # Pre-flight. A sheet takes hours to build; discovering on row 1 that
+    # generation is down beats discovering it on row 13.
+    if not args.skip_preflight:
+        probe = _answer_one(adapter, chosen[0])
+        if not probe.ok:
+            _err(f"error: the adapter failed on the first question — not starting a "
+                 f"{len(chosen)}-question run.\n  {probe.error}")
+            _err("  Fix the service, or pass --skip-preflight to run anyway.")
+            return 1
+        _out(f"  pre-flight ok: {len(probe.retrieved_chunks)} chunks, "
+             f"{(probe.latency_ms or 0)/1000:.0f}s")
+
+    _out(f"\nRunning {len(chosen)} question(s) through '{args.adapter}' "
+         f"then {len(config.judge.models)} judges…")
+
+    rows, verdicts = [], []
+    out_path = Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def flush() -> None:
+        """Persist after every row. This stack has died mid-run repeatedly, and
+        a sheet that only lands on the final row loses hours to one outage."""
+        out_path.write_text(
+            json.dumps({"generated_at": _now(), "adapter": args.adapter,
+                        "judge_models": [m.id for m in config.judge.models],
+                        "requested": len(chosen), "completed": len(rows),
+                        "coverage": sample_coverage(chosen[: len(rows)]),
+                        "inter_judge": inter_judge_agreement(verdicts),
+                        "rows": rows}, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8")
+
+    with adapter:
+        for index, item in enumerate(chosen, 1):
+            trace = _answer_one(adapter, item)
+            verdict = panel.judge_one(item, trace)
+            verdicts.append(verdict)
+            gold = item.reference.sitting_id if item.reference else None
+            rows.append({
+                "question_id": item.id,
+                "owner": item.owner,
+                "sitting_id": gold,
+                "golden_ms": list(item.reference.pages) if item.reference else [],
+                "question": item.question,
+                "expected_answer": item.expected_answer,
+                "generated_answer": trace.generated_answer,
+                "retrieved": [
+                    {"rank": c.rank, "sitting_id": c.sitting_id, "page": c.page,
+                     "text": (c.text or "")[:600]}
+                    for c in trace.top_k(config.judge.context_top_k)
+                ],
+                "adapter_error": trace.error,
+                "panel_scores": verdict.scores,
+                "judge_scores": {j.model: j.scores for j in verdict.verdicts if j.ok},
+                "judge_rationales": {j.model: j.rationale for j in verdict.verdicts if j.rationale},
+                "flagged_dimensions": verdict.flagged_dimensions,
+                # the human fills these in; leave every dimension present so a
+                # blank is visibly unlabelled rather than silently absent
+                "human_scores": {d: None for d in DIMENSIONS},
+                "labelled_by": "",
+                "notes": "",
+            })
+            if not args.quiet:
+                ok = sum(1 for j in verdict.verdicts if j.ok)
+                # Distinguish "the adapter failed so the judges were never
+                # asked" from "the judges failed". Reporting both as
+                # "judges 0/3" sends whoever reads it after the wrong service.
+                if not trace.ok:
+                    _out(f"  [{index}/{len(chosen)}] {item.id:<13}ADAPTER FAILED — not judged"
+                         f"  {(trace.error or '')[:80]}")
+                else:
+                    _out(f"  [{index}/{len(chosen)}] {item.id:<13}"
+                         f"{len(trace.retrieved_chunks):>2} chunks  judges {ok}/"
+                         f"{len(config.judge.models)}  {verdict.scores or 'unjudged'}"
+                         + ("  FLAGGED" if verdict.flagged_dimensions else ""))
+            flush()
+
+    # A row is labellable only if the adapter worked *and* at least one judge
+    # scored it; anything else is a blank a human cannot meaningfully compare to.
+    usable = sum(1 for r in rows if not r["adapter_error"] and r["panel_scores"])
+    inter = inter_judge_agreement(verdicts)
+    _out(f"\nUsable rows  {usable}/{len(rows)}")
+    _out("Inter-judge agreement (no human labels needed):")
+    for d, st in inter["per_dimension"].items():
+        _out(f"  {d:<20}exact {_pct(st['exact_agreement'])}   within 1 {_pct(st['within_1'])}")
+    _out(f"  flagged rows        {inter['flagged_questions']}/{inter['questions']}"
+         f"  ({_pct(inter['flagged_rate'])})")
+
+    flush()
+    _out(f"\nSheet -> {args.output}  ({len(rows)} row(s))")
+    if usable < len(rows):
+        _out(f"  ! {len(rows) - usable} row(s) have no scores and cannot be labelled — "
+             f"re-run to top up once the service is stable.")
+    _out("  Fill in 'human_scores' for each row (1-5 per dimension), then:")
+    _out(f"    rag-eval label {args.output} --labelled-by <name>")
+    _out("    rag-eval calibrate --run <run_id>")
+    return 0
+
+
+def cmd_calibrate_export(args: argparse.Namespace, config: Config) -> int:
+    """Flatten a calibration sheet into a CSV or .xlsx a person can label in."""
+    import csv
+
+    sheet = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    labellers = [n.strip() for n in (args.labellers or "").split(",") if n.strip()]
+
+    if args.output.lower().endswith(".xlsx"):
+        from rag_eval.judges.workbook import write_workbook
+        path, count = write_workbook(sheet, args.output, labellers=labellers)
+        _out(f"{count} row(s) -> {path}")
+        if labellers:
+            _out(f"  assigned round-robin to {', '.join(labellers)} — interleaved, not in "
+                 f"blocks, so nobody gets one reviewer's questions only")
+        _out("  shaded columns are yours to fill (1-5); the judges' scores are hidden")
+        _out("  a 'how to label' tab carries the rubric")
+        _out("\n  When done, export as CSV then: rag-eval label <file>.csv --labelled-by <name>")
+        return 0
+
+    rows = sheet_to_rows(sheet)
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8-sig", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS, quoting=csv.QUOTE_ALL)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    unlabelled = sum(1 for r in rows if not any(r[f"human_{d}"] for d in DIMENSIONS))
+    _out(f"{len(rows)} row(s) -> {out}")
+    _out(f"  {unlabelled} row(s) awaiting labels")
+    _out(f"  fill in: {', '.join('human_' + d for d in DIMENSIONS)}  (1-5 each)")
+    _out("\n  The reading material comes first, your scores next, and the panel's scores")
+    _out("  last — score from the question and context before looking at what the judges said.")
+    _out(f"\n  Then: rag-eval label {out} --labelled-by <name>")
+    return 0
+
+
 def cmd_calibrate(args: argparse.Namespace, config: Config) -> int:
     """Report how well the panel agrees with the human-labelled samples."""
     store = _resolve_store(config, args.run)
@@ -1053,18 +1227,29 @@ def cmd_calibrate(args: argparse.Namespace, config: Config) -> int:
 
 
 def cmd_label(args: argparse.Namespace, config: Config) -> int:
-    """Import a human-labelled calibration file (the ~50-sample seed set)."""
-    rows = json.loads(Path(args.file).read_text(encoding="utf-8"))
-    samples = [
-        CalibrationSample(
-            question_id=str(row["question_id"]),
-            human_scores={k: int(v) for k, v in (row.get("human_scores") or {}).items()},
-            labelled_by=row.get("labelled_by", args.labelled_by),
-            notes=row.get("notes", ""),
-        )
-        for row in rows
-        if row.get("human_scores")
-    ]
+    """Import human labels from a CSV sheet, a calibration sheet, or a plain list."""
+    path = Path(args.file)
+    if path.suffix.lower() == ".csv":
+        import csv
+        with open(path, encoding="utf-8-sig", newline="") as fh:
+            samples = rows_to_samples(list(csv.DictReader(fh)), args.labelled_by)
+    else:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        rows = raw.get("rows", raw) if isinstance(raw, dict) else raw
+        samples = [
+            CalibrationSample(
+                question_id=str(row["question_id"]),
+                human_scores={k: int(v) for k, v in (row.get("human_scores") or {}).items()
+                              if v is not None},
+                labelled_by=row.get("labelled_by") or args.labelled_by,
+                notes=row.get("notes", ""),
+            )
+            for row in rows
+            if any(v is not None for v in (row.get("human_scores") or {}).values())
+        ]
+    if not samples:
+        _err(f"error: no human scores found in {path} — fill in the human_* columns first")
+        return 1
     added = append_calibration(samples, args.calibration)
     _out(f"Added {added} new sample(s) to {args.calibration} "
          f"({len(samples) - added} already labelled)")
@@ -1308,13 +1493,37 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--labelled-by", default="")
     p.set_defaults(func=cmd_adjudicate)
 
+    p = subparsers.add_parser(
+        "calibrate-sample",
+        help="build a stratified labelling sheet: real traces + panel scores, blank human scores")
+    add_dataset_args(p)
+    add_adapter_args(p)
+    p.add_argument("--size", type=int, default=50, help="questions to sample (default 50)")
+    p.add_argument("--seed", type=int, default=0, help="sampling seed, for reproducibility")
+    p.add_argument("--output", default="datasets/calibration_sheet.json")
+    p.add_argument("--offline-judge", metavar="FILE")
+    p.add_argument("--dry-run", action="store_true",
+                   help="show the sample's coverage without calling anything")
+    p.add_argument("--skip-preflight", action="store_true",
+                   help="start even if the first question fails")
+    p.add_argument("--quiet", action="store_true")
+    p.set_defaults(func=cmd_calibrate_sample)
+
     p = subparsers.add_parser("calibrate", help="report panel agreement with human labels")
     p.add_argument("--run", help="run id (default: the most recent run)")
     p.add_argument("--calibration", default="datasets/judge_calibration.jsonl")
     p.add_argument("--output")
     p.set_defaults(func=cmd_calibrate)
 
-    p = subparsers.add_parser("label", help="import human-labelled calibration samples")
+    p = subparsers.add_parser(
+        "calibrate-export", help="flatten a calibration sheet into a labelling CSV")
+    p.add_argument("--input", default="datasets/calibration_sheet.json")
+    p.add_argument("--output", default="datasets/calibration_sheet.csv",
+                   help="end in .xlsx for a formatted workbook, .csv for plain")
+    p.add_argument("--labellers", help="comma-separated names to assign rows round-robin")
+    p.set_defaults(func=cmd_calibrate_export)
+
+    p = subparsers.add_parser("label", help="import human-labelled calibration samples (JSON or CSV)")
     p.add_argument("file")
     p.add_argument("--calibration", default="datasets/judge_calibration.jsonl")
     p.add_argument("--labelled-by", default="")

@@ -34,6 +34,12 @@ class JudgeModel:
     #: content with finish_reason="length" — which looks exactly like a model
     #: refusing to answer. Measured: ~1570 reasoning tokens for one rubric.
     max_tokens: int = 4096
+    #: Hidden reasoning, off by default. Scoring against a fixed rubric is
+    #: mechanical, and on this gateway thinking costs ~10x the latency and ~13x
+    #: the tokens for identical scores (measured on Qwen3.5-397B: 15.7s and
+    #: 1517 tokens with it on, 1.2s and 102 tokens with it off, same rubric).
+    #: Turn it on for a specific model only if its scores demonstrably improve.
+    enable_thinking: bool = False
     # USD per 1k tokens, used for the ops cost estimate.
     input_cost_per_1k: float = 0.0
     output_cost_per_1k: float = 0.0
