@@ -123,7 +123,16 @@ class RetrievedChunk:
     chunk_id: str = ""
     score: float | None = None
     sitting_id: str | None = None
+    #: The **printed** Hansard page (``ms.``) — the number on the page, which is
+    #: what the golden set records and what every page metric compares against.
     page: int | None = None
+    #: The physical page index in the PDF, as the ingestor reports it. Kept for
+    #: locating the chunk in the source document; never compared with ``ms.``.
+    pdf_page: int | None = None
+    #: How ``page`` was derived: "printed" (converted via the document's
+    #: ms_offset) or "physical" (no offset available, so the raw index is being
+    #: used and page metrics will under-report).
+    page_source: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -138,6 +147,8 @@ class RetrievedChunk:
             score=d.get("score"),
             sitting_id=d.get("sitting_id"),
             page=d.get("page"),
+            pdf_page=d.get("pdf_page"),
+            page_source=d.get("page_source", ""),
             metadata=dict(d.get("metadata", {})),
         )
 

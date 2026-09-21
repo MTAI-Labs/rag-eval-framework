@@ -2,6 +2,7 @@
 
 from conftest import chunk, item, ref, trace
 
+from rag_eval.adapters.base import RagAdapter
 from rag_eval.metrics import retrieval
 
 
@@ -14,6 +15,38 @@ def test_hit_recall_and_mrr_for_a_perfect_retrieval():
     assert result.recall_at_k == {1: True, 3: True, 5: True}
     assert result.first_correct_rank == 1
     assert result.reciprocal_rank == 1.0
+
+
+def test_recall_counts_a_hit_only_once_the_ms_offset_is_applied():
+    # The regression this guards: the ingestor reports physical PDF pages, the
+    # golden set cites printed "ms." pages. dr_2004-06-14 prints its ms. 1 on
+    # PDF page 13, so the evidence on printed page 4 is physical page 16.
+    # Comparing the raw index against the golden set scored 10% recall on a
+    # corpus that actually retrieves at 94%.
+    gold = item("q1", ref("dr", "2004-06-14", 4))
+
+    raw = trace("q1", [RagAdapter.make_chunk(1, "t", sitting_id="dr_2004-06-14", page=16)])
+    result = retrieval.score_question(gold, raw, k_values=(1,))
+    assert result.recall_at_k[1] is False
+    assert result.chunks_physical_page == 1
+
+    converted = trace("q1", [RagAdapter.make_chunk(
+        1, "t", sitting_id="dr_2004-06-14", page=16, ms_offset=13)])
+    result = retrieval.score_question(gold, converted, k_values=(1,))
+    assert result.recall_at_k[1] is True
+    assert result.chunks_physical_page == 0
+
+
+def test_metadata_health_counts_chunks_stuck_on_physical_pages():
+    gold = item("q1", ref("dr", "2004-06-14", 4))
+    t = trace("q1", [
+        RagAdapter.make_chunk(1, "t", sitting_id="dr_2004-06-14", page=16),
+        RagAdapter.make_chunk(2, "t", sitting_id="dr_2004-06-14", page=17, ms_offset=13),
+    ])
+
+    card = retrieval.aggregate([retrieval.score_question(gold, t, k_values=(2,))],
+                               k_values=(2,))
+    assert card["metadata_health"]["chunks_without_ms_offset"] == 1
 
 
 def test_right_sitting_wrong_page_hits_but_does_not_recall():

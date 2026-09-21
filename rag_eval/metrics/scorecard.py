@@ -186,6 +186,16 @@ def _warnings(card: Scorecard) -> list[str]:
             f"retrieval."
         )
 
+    physical = health.get("chunks_without_ms_offset", 0)
+    if physical:
+        out.append(
+            f"{physical} retrieved chunk(s) carry a physical PDF page rather than the printed "
+            f"'ms.' — the document was ingested without an ms_offset. recall@k and "
+            f"page_citation_accuracy compare against the golden set's printed pages, so they "
+            f"under-report badly — this scored 10% recall on a corpus retrieving at 94%. "
+            f"Re-ingest with 'rag-eval ingest --offsets datasets/hansard_pdfs/offsets.json'."
+        )
+
     unscorable = card.retrieval.get("unscorable_no_reference", 0)
     if unscorable:
         out.append(

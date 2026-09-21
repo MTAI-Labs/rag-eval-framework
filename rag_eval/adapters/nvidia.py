@@ -50,14 +50,26 @@ DEFAULTS = {
     # in custom_metadata -- there is no ready-made sitting id, so it is derived
     # from dewan + session_date (see _derive_sitting). Several candidates are
     # tried in order so one build works across ingestion revisions.
-    "sitting_fields": ["metadata.sitting_id", "metadata.source_id", "document_name", "source"],
-    "page_fields": ["metadata.page_number", "content_metadata.page_number",
-                    "metadata.page", "metadata.ms", "page_number"],
-    "dewan_fields": ["metadata.dewan", "content_metadata.dewan", "dewan"],
-    "session_date_fields": ["metadata.session_date", "content_metadata.session_date",
+    # The custom fields we stamp at ingest come back nested under
+    # metadata.content_metadata, not beside the built-ins — check there first.
+    # sitting_id appeared to work without it only because it falls through to
+    # document_name; ms_offset has no such fallback and silently went missing.
+    "sitting_fields": ["metadata.content_metadata.sitting_id", "metadata.sitting_id",
+                       "metadata.source_id", "document_name", "source"],
+    "page_fields": ["metadata.page_number", "metadata.content_metadata.page_number",
+                    "content_metadata.page_number", "metadata.page", "metadata.ms",
+                    "page_number"],
+    "dewan_fields": ["metadata.content_metadata.dewan", "metadata.dewan",
+                     "content_metadata.dewan", "dewan"],
+    "session_date_fields": ["metadata.content_metadata.session_date",
+                            "metadata.session_date", "content_metadata.session_date",
                             "session_date"],
-    "filename_fields": ["metadata.filename", "content_metadata.filename", "filename",
-                        "document_name"],
+    "filename_fields": ["metadata.content_metadata.filename", "metadata.filename",
+                        "content_metadata.filename", "filename", "document_name"],
+    #: Stamped onto each document at ingest; converts the ingestor's physical
+    #: page into the printed ms. the golden set cites.
+    "ms_offset_fields": ["metadata.content_metadata.ms_offset", "metadata.ms_offset",
+                         "content_metadata.ms_offset", "ms_offset"],
     "prompt_tokens_field": "usage.prompt_tokens",
     "completion_tokens_field": "usage.completion_tokens",
     "model_field": "model",
@@ -180,6 +192,7 @@ class NvidiaRagAdapter(RagAdapter):
                 score=_as_float(c.get("score")),
                 sitting_id=self._sitting_of(c),
                 page=_first(c, s["page_fields"]),
+                ms_offset=_first(c, s["ms_offset_fields"]),
                 metadata=c.get("metadata", {}) if isinstance(c, dict) else {},
             )
             for i, c in enumerate(results)
@@ -231,6 +244,7 @@ class NvidiaRagAdapter(RagAdapter):
                 score=_as_float(dig(c, s["chunk_score_field"])),
                 sitting_id=self._sitting_of(c),
                 page=_first(c, s["page_fields"]),
+                ms_offset=_first(c, s["ms_offset_fields"]),
                 metadata=c.get("metadata", {}) if isinstance(c, dict) else {},
             )
             for i, c in enumerate(raw_chunks)

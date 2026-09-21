@@ -16,6 +16,11 @@ from rag_eval.dataset.refs import ReferenceParseError, normalise_sitting_id, par
 from rag_eval.types import RagTrace, RetrievedChunk, SourceRef, Stopwatch
 
 
+#: Added to a 0-based physical page before subtracting the document's offset.
+#: Verified against the documents' own running headers by ``page-map-check``.
+PAGE_BASE = 1
+
+
 class AdapterError(RuntimeError):
     """The RAG service failed in a way the harness should record, not crash on."""
 
@@ -98,16 +103,40 @@ class RagAdapter(ABC):
         score: float | None = None,
         sitting_id: Any = None,
         page: Any = None,
+        ms_offset: Any = None,
         metadata: dict[str, Any] | None = None,
     ) -> RetrievedChunk:
-        """Build a chunk with sitting id and page coerced into canonical form."""
+        """Build a chunk, converting the ingestor's page into the printed ``ms.``.
+
+        The golden set cites the number *printed on the page*; an ingestor
+        reports the *physical index* in the PDF. They differ by however much
+        front matter a sitting has (measured: 2 to 12 pages), so comparing them
+        directly makes retrieval look broken when it is working — recall read
+        10% instead of 94% before this conversion existed.
+
+        ``ms_offset`` is stamped into each document's metadata at ingest, so the
+        conversion travels with the data rather than living in a lookup table
+        that can drift from the collection.
+        """
+        physical = _coerce_page(page)
+        offset = _coerce_page(ms_offset)
+        printed, source = physical, ""
+        if physical is not None:
+            if offset is not None:
+                # page_number is 0-based; verified against running headers in
+                # the documents themselves (see rag-eval page-map-check).
+                printed, source = physical + PAGE_BASE - offset, "printed"
+            else:
+                source = "physical"
         return RetrievedChunk(
             rank=rank,
             text=text or "",
             chunk_id=str(chunk_id or ""),
             score=float(score) if score is not None else None,
             sitting_id=normalise_sitting_id(sitting_id),
-            page=_coerce_page(page),
+            page=printed,
+            pdf_page=physical,
+            page_source=source,
             metadata=dict(metadata or {}),
         )
 

@@ -10,7 +10,7 @@ import pytest
 
 from rag_eval.adapters import available, get_adapter
 from rag_eval.adapters.base import AdapterError, RagAdapter, dig
-from rag_eval.adapters.nvidia import NvidiaRagAdapter
+from rag_eval.adapters.nvidia import DEFAULTS, NvidiaRagAdapter, _first
 from rag_eval.adapters.tanyaparlimen import TanyaParlimenAdapter
 from rag_eval.types import RagTrace
 
@@ -69,6 +69,64 @@ def test_chunk_metadata_is_normalised_by_the_base_class():
 
     assert RagAdapter.make_chunk(1, "t", sitting_id=None, page=None).page is None
     assert RagAdapter.make_chunk(1, "t", page="no page here").page is None
+
+
+def test_physical_pages_are_converted_to_the_printed_ms():
+    # The ingestor reports a 0-based physical index; the golden set cites the
+    # number printed on the page. dr_2004-06-14 starts its "ms. 1" on PDF
+    # page 13, so ms_offset is 13 and physical page 16 is printed page 4.
+    chunk = RagAdapter.make_chunk(1, "t", sitting_id="dr_2004-06-14", page=16, ms_offset=13)
+    assert chunk.page == 4
+    assert chunk.pdf_page == 16
+    assert chunk.page_source == "printed"
+
+
+def test_a_missing_offset_degrades_visibly_rather_than_silently():
+    # No offset stamped at ingest: fall back to the raw index, but say so, so
+    # the scorecard can explain why recall looks impossible.
+    chunk = RagAdapter.make_chunk(1, "t", sitting_id="dr_2004-06-14", page=16)
+    assert chunk.page == 16
+    assert chunk.pdf_page == 16
+    assert chunk.page_source == "physical"
+
+    # An offset with no page to apply it to is not an error either.
+    assert RagAdapter.make_chunk(1, "t", page=None, ms_offset=13).page is None
+
+
+def test_offsets_survive_the_strings_an_ingestor_actually_emits():
+    chunk = RagAdapter.make_chunk(1, "t", page="page 16", ms_offset="13")
+    assert (chunk.page, chunk.pdf_page) == (4, 16)
+
+    # A junk offset must not poison a usable page.
+    chunk = RagAdapter.make_chunk(1, "t", page=16, ms_offset="unknown")
+    assert (chunk.page, chunk.page_source) == (16, "physical")
+
+
+def test_custom_metadata_is_read_from_where_the_ingestor_actually_nests_it():
+    # Shape copied from a real /v1/search result: the fields we stamp at ingest
+    # come back under metadata.content_metadata, not beside the built-ins.
+    # Every earlier guess missed that, and ms_offset — which, unlike sitting_id,
+    # has no document_name to fall back on — silently read as absent, so every
+    # page stayed physical and recall read 1/8 instead of 7/8.
+    chunk = {
+        "document_name": "kkdr_2026-07-16.pdf",
+        "metadata": {
+            "page_number": 6,
+            "content_metadata": {
+                "page_number": 6,
+                "sitting_id": "kkdr_2026-07-16",
+                "dewan": "kamar khas",
+                "session_date": "2026-07-16",
+                "ms_offset": 2,
+            },
+        },
+    }
+    s = DEFAULTS
+    assert _first(chunk, s["ms_offset_fields"]) == 2
+    assert _first(chunk, s["sitting_fields"]) == "kkdr_2026-07-16"
+    assert _first(chunk, s["page_fields"]) == 6
+    assert _first(chunk, s["dewan_fields"]) == "kamar khas"
+    assert _first(chunk, s["session_date_fields"]) == "2026-07-16"
 
 
 def test_citations_fall_back_to_the_retrieved_chunks():

@@ -55,6 +55,10 @@ class RetrievalResult:
     citation_status: str = CITATION_NONE
     retrieved_chunks: int = 0
     chunks_missing_metadata: int = 0
+    #: Chunks whose page is the raw physical index because the document carried
+    #: no ms_offset. Those cannot match a golden ms. except by coincidence, so
+    #: recall and page-citation accuracy under-report while this is non-zero.
+    chunks_physical_page: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -72,6 +76,7 @@ class RetrievalResult:
             "citation_status": self.citation_status,
             "retrieved_chunks": self.retrieved_chunks,
             "chunks_missing_metadata": self.chunks_missing_metadata,
+            "chunks_physical_page": self.chunks_physical_page,
         }
 
 
@@ -134,6 +139,8 @@ def score_question(
         scorable=item.is_scorable_for_retrieval,
         retrieved_chunks=len(trace.retrieved_chunks),
         chunks_missing_metadata=sum(1 for c in trace.retrieved_chunks if not c.sitting_id),
+        chunks_physical_page=sum(1 for c in trace.retrieved_chunks
+                                 if c.page_source == "physical"),
     )
     if not item.reference:
         return result
@@ -217,6 +224,7 @@ def metadata_health(results: Sequence[RetrievalResult]) -> dict[str, Any]:
         "chunks_with_sitting_id_pct": (
             round((total_chunks - missing) / total_chunks * 100, 2) if total_chunks else None
         ),
+        "chunks_without_ms_offset": sum(r.chunks_physical_page for r in results),
         "questions_with_no_usable_metadata": sum(
             1 for r in results if r.retrieved_chunks and r.chunks_missing_metadata == r.retrieved_chunks
         ),

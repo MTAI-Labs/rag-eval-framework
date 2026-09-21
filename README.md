@@ -156,6 +156,26 @@ page_citation_accuracy = 1   the cited ms. 9 is a gold page
 is often a range (`ms. 15-16`); an answer citing page 15 of it is correct, and
 demanding the full range would score correct behaviour as a miss.
 
+**`page(Cᵢ)` is the printed `ms.`, not the PDF page index.** The ingestor reports
+a physical page; the golden set cites the number printed on the paper, and the two
+differ by the front matter. The adapter converts at the point it builds the chunk,
+using the `ms_offset` stamped onto the document at ingest:
+
+```
+page      = pdf_page + 1 - ms_offset     # the printed ms., what metrics compare
+pdf_page  = what the ingestor reported   # kept for locating the chunk in the PDF
+```
+
+`dr_2004-06-14` prints its `ms. 1` on PDF page 13, so `ms_offset = 13` and physical
+page 16 is printed page 4. Getting this wrong is not a rounding error: measured on
+the live collection, comparing raw physical pages against the golden set scored
+**10% recall on a corpus that retrieves at 94%**.
+
+A document ingested without an `ms_offset` falls back to the raw index and records
+`page_source = "physical"`. Those chunks cannot match a golden `ms.` except by
+coincidence, so `metadata_health.chunks_without_ms_offset` counts them and the
+scorecard prints a warning rather than letting the run report a quiet zero.
+
 #### Citation outcomes
 
 `page_citation_accuracy` alone cannot tell you *why* it is low, so every
