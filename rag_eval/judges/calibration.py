@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-from rag_eval.judges.rubric import DIMENSIONS, PanelVerdict, clamp
+from rag_eval.judges.rubric import DIMENSIONS, JudgeVerdict, PanelVerdict, clamp
 from rag_eval.types import GoldenItem
 
 DEFAULT_PATH = Path("datasets/judge_calibration.jsonl")
@@ -302,6 +302,38 @@ def inter_judge_agreement(verdicts: Sequence[PanelVerdict]) -> dict[str, Any]:
         "per_dimension": per_dimension,
         "per_pair": dict(sorted(pairs.items())),
     }
+
+
+def verdicts_from_sheet(sheet: dict[str, Any]) -> list[PanelVerdict]:
+    """Rebuild panel verdicts from a calibration sheet.
+
+    ``agreement_report`` takes ``PanelVerdict``s, and the only other source is a
+    run store. A sheet built by ``calibrate-sample`` holds the same judgement --
+    per-judge scores, the panel's aggregate, what was flagged -- but never
+    passed through a run, so without this the numbers can only be recomputed by
+    hand and the report is not reproducible.
+
+    Only judges the sheet recorded are rebuilt: ``calibrate-sample`` stores
+    ``judge_scores`` for panel members that answered, so a row judged 2/3 yields
+    two verdicts rather than a third with invented scores.
+    """
+    out = []
+    for row in sheet.get("rows", []):
+        rationales = row.get("judge_rationales") or {}
+        verdicts = [
+            JudgeVerdict(model=model, scores=dict(scores),
+                         rationale=str(rationales.get(model, "")))
+            for model, scores in (row.get("judge_scores") or {}).items()
+        ]
+        out.append(PanelVerdict(
+            question_id=str(row.get("question_id", "")),
+            verdicts=verdicts,
+            scores={k: v for k, v in (row.get("panel_scores") or {}).items()
+                    if isinstance(v, int)},
+            flagged_dimensions=list(row.get("flagged_dimensions") or []),
+            error=row.get("adapter_error") or None,
+        ))
+    return out
 
 
 def agreement_report(

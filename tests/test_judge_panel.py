@@ -356,3 +356,69 @@ def test_workbook_carries_a_rubric_tab(tmp_path):
                     for c in row if c.value)
     for dim in DIMENSIONS:
         assert dim in text
+
+
+# -- calibration reports from a sheet ------------------------------------
+
+def _verdict_sheet(**overrides):
+    row = {
+        "question_id": "tp-0001",
+        "panel_scores": {"faithfulness": 5, "correctness": 5,
+                         "completeness": 4, "citation_accuracy": 3},
+        "judge_scores": {
+            "judge-a": {"faithfulness": 5, "correctness": 5,
+                        "completeness": 4, "citation_accuracy": 3},
+            "judge-b": {"faithfulness": 5, "correctness": 5,
+                        "completeness": 4, "citation_accuracy": 1},
+        },
+        "judge_rationales": {"judge-a": "cites the right page"},
+        "flagged_dimensions": ["citation_accuracy"],
+        "adapter_error": None,
+    }
+    row.update(overrides)
+    return {"rows": [row]}
+
+
+def test_a_sheet_rebuilds_the_panel_verdict_it_recorded():
+    from rag_eval.judges.calibration import verdicts_from_sheet
+
+    v = verdicts_from_sheet(_verdict_sheet())[0]
+    assert v.question_id == "tp-0001"
+    assert v.scores["citation_accuracy"] == 3
+    assert v.flagged_dimensions == ["citation_accuracy"]
+    assert {j.model for j in v.verdicts} == {"judge-a", "judge-b"}
+    assert all(j.ok for j in v.verdicts)
+    assert v.verdicts[0].rationale == "cites the right page"
+
+
+def test_a_partly_judged_row_yields_only_the_judges_that_answered():
+    # A row judged 2/3 must not grow a third verdict with invented scores --
+    # that would let a missing judge quietly count towards agreement.
+    from rag_eval.judges.calibration import verdicts_from_sheet
+
+    sheet = _verdict_sheet(judge_scores={"judge-a": {"faithfulness": 5, "correctness": 5,
+                                             "completeness": 4, "citation_accuracy": 3}})
+    assert len(verdicts_from_sheet(sheet)[0].verdicts) == 1
+
+
+def test_sheet_verdicts_feed_the_same_agreement_report_a_run_would():
+    from rag_eval.judges.calibration import (CalibrationSample, agreement_report,
+                                             verdicts_from_sheet)
+
+    verdicts = verdicts_from_sheet(_verdict_sheet())
+    human = CalibrationSample(
+        question_id="tp-0001",
+        human_scores={"faithfulness": 5, "correctness": 5,
+                      "completeness": 4, "citation_accuracy": 1},
+        labelled_by="tester",
+    )
+    report = agreement_report(verdicts, [human])
+
+    assert report["labelled_samples"] == 1
+    # three dimensions agree exactly; citation_accuracy is panel 3 vs human 1
+    assert report["per_dimension"]["correctness"]["exact_agreement"] == 1.0
+    assert report["per_dimension"]["citation_accuracy"]["exact_agreement"] == 0.0
+    assert report["per_dimension"]["citation_accuracy"]["mean_bias"] == 2.0
+    # the report carries both halves criterion 2 asks for
+    assert report["inter_judge"]["per_dimension"]["citation_accuracy"]["pairs_compared"] == 1
+    assert "panel_human_agreement" in report

@@ -64,6 +64,7 @@ from rag_eval.judges.calibration import (
     agreement_report,
     append_calibration,
     load_calibration,
+    verdicts_from_sheet,
     samples_from_adjudications,
 )
 from rag_eval.judges.client import build_client
@@ -1193,16 +1194,36 @@ def cmd_calibrate_export(args: argparse.Namespace, config: Config) -> int:
 
 def cmd_calibrate(args: argparse.Namespace, config: Config) -> int:
     """Report how well the panel agrees with the human-labelled samples."""
-    store = _resolve_store(config, args.run)
-    verdicts = store.read_judgments()
+    # A sheet from 'calibrate-sample' never passed through a run, so its panel
+    # scores are not in any run store. Reading verdicts from it is what makes
+    # the human-agreement half of the report reproducible rather than a number
+    # someone recomputed by hand.
+    if args.sheet:
+        sheet_path = Path(args.sheet)
+        if not sheet_path.exists():
+            _err(f"no calibration sheet at {sheet_path}")
+            return 1
+        verdicts = verdicts_from_sheet(json.loads(sheet_path.read_text(encoding="utf-8")))
+        source = str(sheet_path)
+    else:
+        store = _resolve_store(config, args.run)
+        verdicts = store.read_judgments()
+        source = f"run {store.run_id}"
+
     samples = load_calibration(args.calibration)
     if not samples:
         _err(f"no calibration samples in {args.calibration}")
         return 1
 
     report = agreement_report(verdicts, samples)
+    report["source"] = source
+    if not report["labelled_samples"]:
+        _err(f"none of the {len(samples)} labelled sample(s) appear in {source} -- "
+             f"labels and panel scores must come from the same panel run")
+        return 1
+
     _out(f"Calibration set: {report['calibration_set_size']} sample(s), "
-         f"{report['labelled_samples']} overlapping run {store.run_id}\n")
+         f"{report['labelled_samples']} overlapping {source}\n")
     _out(f"  {'dimension':<20}{'labelled':>9}{'exact':>9}{'within 1':>10}{'bias':>8}")
     for dimension, stats in report["per_dimension"].items():
         _out(
@@ -1218,6 +1239,12 @@ def cmd_calibrate(args: argparse.Namespace, config: Config) -> int:
                 f"{_pct(stats['exact_agreement']):>9}{_pct(stats['within_1']):>10}"
                 f"{_fmt(stats['mean_bias']):>8}"
             )
+    headline = report.get("panel_human_agreement")
+    if headline is not None:
+        verdict = "meets" if report["meets_target"] else "BELOW"
+        _out(f"\n  panel-human agreement (mean within-1): {headline:.1%} "
+             f"-- {verdict} the {report['target']:.0%} target")
+
     if args.output:
         Path(args.output).write_text(
             json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
@@ -1511,6 +1538,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = subparsers.add_parser("calibrate", help="report panel agreement with human labels")
     p.add_argument("--run", help="run id (default: the most recent run)")
+    p.add_argument("--sheet", help="read panel verdicts from a calibration sheet "
+                                   "instead of a run (e.g. datasets/calibration_sheet.json)")
     p.add_argument("--calibration", default="datasets/judge_calibration.jsonl")
     p.add_argument("--output")
     p.set_defaults(func=cmd_calibrate)

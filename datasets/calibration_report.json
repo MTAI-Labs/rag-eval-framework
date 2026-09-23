@@ -1,0 +1,98 @@
+{
+  "labelled_samples": 50,
+  "calibration_set_size": 50,
+  "panel_human_agreement": 0.865,
+  "target": 0.8,
+  "meets_target": true,
+  "per_dimension": {
+    "faithfulness": {
+      "labelled": 50,
+      "exact_agreement": 0.76,
+      "within_1": 0.8,
+      "mean_bias": 0.68
+    },
+    "correctness": {
+      "labelled": 50,
+      "exact_agreement": 0.94,
+      "within_1": 1.0,
+      "mean_bias": 0.06
+    },
+    "completeness": {
+      "labelled": 50,
+      "exact_agreement": 0.68,
+      "within_1": 0.9,
+      "mean_bias": -0.42
+    },
+    "citation_accuracy": {
+      "labelled": 50,
+      "exact_agreement": 0.58,
+      "within_1": 0.76,
+      "mean_bias": 0.62
+    }
+  },
+  "per_judge": {
+    "zai-org/GLM-5.2": {
+      "compared": 200,
+      "exact_agreement": 0.74,
+      "within_1": 0.87,
+      "mean_bias": 0.23
+    },
+    "Qwen/Qwen3.5-397B-A17B": {
+      "compared": 200,
+      "exact_agreement": 0.735,
+      "within_1": 0.87,
+      "mean_bias": 0.225
+    },
+    "moonshotai/Kimi-K2.6": {
+      "compared": 200,
+      "exact_agreement": 0.74,
+      "within_1": 0.865,
+      "mean_bias": 0.235
+    }
+  },
+  "inter_judge": {
+    "questions": 50,
+    "flagged_questions": 1,
+    "flagged_rate": 0.02,
+    "per_dimension": {
+      "faithfulness": {
+        "pairs_compared": 150,
+        "exact_agreement": 1.0,
+        "within_1": 1.0
+      },
+      "correctness": {
+        "pairs_compared": 150,
+        "exact_agreement": 1.0,
+        "within_1": 1.0
+      },
+      "completeness": {
+        "pairs_compared": 150,
+        "exact_agreement": 0.9467,
+        "within_1": 1.0
+      },
+      "citation_accuracy": {
+        "pairs_compared": 150,
+        "exact_agreement": 0.9733,
+        "within_1": 0.9867
+      }
+    },
+    "per_pair": {
+      "Qwen/Qwen3.5-397B-A17B vs moonshotai/Kimi-K2.6": {
+        "compared": 200,
+        "exact_agreement": 0.98,
+        "within_1": 1.0
+      },
+      "Qwen/Qwen3.5-397B-A17B vs zai-org/GLM-5.2": {
+        "compared": 200,
+        "exact_agreement": 0.97,
+        "within_1": 0.995
+      },
+      "moonshotai/Kimi-K2.6 vs zai-org/GLM-5.2": {
+        "compared": 200,
+        "exact_agreement": 0.99,
+        "within_1": 0.995
+      }
+    }
+  },
+  "source": "datasets/calibration_sheet.json"
+}
