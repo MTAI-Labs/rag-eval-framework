@@ -65,6 +65,11 @@ summary{cursor:pointer;font-weight:600}
 .q .qa{color:var(--muted);font-size:12.5px;margin-top:4px;white-space:pre-wrap}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 .foot{margin-top:40px;color:var(--muted);font-size:12px}
+table.sortable th{cursor:pointer;user-select:none;white-space:nowrap}
+table.sortable th:hover{color:var(--accent)}
+table.sortable th::after{content:'';font-size:10px;opacity:.5;margin-left:4px}
+table.sortable th[data-dir='asc']::after{content:'\25B2'}
+table.sortable th[data-dir='desc']::after{content:'\25BC'}
 """
 
 _JS = """
@@ -75,6 +80,24 @@ for(const r of rows){const okT=!t||r.dataset.text.includes(t);
 const okM=m==='all'||r.dataset[m]==='1';r.hidden=!(okT&&okM);}
 document.getElementById('shown').textContent=rows.filter(r=>!r.hidden).length;}
 q.addEventListener('input',apply);f.addEventListener('change',apply);apply();
+// Click a header to sort. A per-question delta reads "0.80 -> 0.40", so sort on
+// the LAST number in the cell (the current value) and fall back to text --
+// sorting those as strings would order them alphabetically and hide the worst
+// regressions in the middle of the table.
+function cellKey(td){const t=(td.textContent||'').trim();
+const nums=t.match(/-?\d+(?:\.\d+)?/g);
+return nums?parseFloat(nums[nums.length-1]):t.toLowerCase();}
+for(const table of document.querySelectorAll('table.sortable')){
+const head=table.tHead&&table.tHead.rows[0];if(!head)continue;
+[...head.cells].forEach((th,i)=>{th.addEventListener('click',()=>{
+const dir=th.dataset.dir==='asc'?'desc':'asc';
+[...head.cells].forEach(c=>delete c.dataset.dir);th.dataset.dir=dir;
+const body=table.tBodies[0];
+const sorted=[...body.rows].sort((a,b)=>{
+const x=cellKey(a.cells[i]),y=cellKey(b.cells[i]);
+if(typeof x==='number'&&typeof y==='number')return dir==='asc'?x-y:y-x;
+return dir==='asc'?String(x).localeCompare(String(y)):String(y).localeCompare(String(x));});
+for(const r of sorted)body.appendChild(r);});});}
 """
 
 
@@ -225,7 +248,7 @@ def _moved_questions(diff: dict[str, Any] | None) -> str:
     )
     return (
         f"<h2>Questions that moved ({len(changes)})</h2>{more}"
-        f'<div class="scroll"><table><thead><tr><th>ID</th><th>Question</th><th>Gold sitting</th>'
+        f'<div class="scroll"><table class="sortable"><thead><tr><th>ID</th><th>Question</th><th>Gold sitting</th>'
         f'<th class="num">hit@5</th><th class="num">correctness</th><th>Direction</th></tr></thead>'
         f"<tbody>{rows}</tbody></table></div>"
     )
@@ -320,7 +343,7 @@ def _questions_table(per_question: list[dict[str, Any]]) -> str:
         f'<option value="miss">Retrieval miss @5 only</option>'
         f'<option value="error">Adapter errors only</option></select>'
         f'<span class="sub" style="margin:0"><span id="shown">0</span> shown</span></div>'
-        f'<div class="scroll"><table id="questions"><thead><tr><th>ID</th><th>Question / answer</th>'
+        f'<div class="scroll"><table id="questions" class="sortable"><thead><tr><th>ID</th><th>Question / answer</th>'
         f'<th>Gold ref</th><th class="num">hit@5</th><th class="num">cite</th>{heads}'
         f"<th>Notes</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
     )

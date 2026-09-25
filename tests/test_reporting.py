@@ -196,3 +196,39 @@ def test_the_report_leads_with_incomparability():
     assert "not the same system" in html
     # The banner must precede the headline numbers a reader sees first.
     assert html.index("not the same system") < html.index("hit_rate@5")
+
+
+def test_per_question_deltas_are_sortable_and_render_offline():
+    # T7 asks for sortable per-question deltas. Sorting is progressive
+    # enhancement, so it must ship inside the page: a scorecard is read from a
+    # run directory or an email attachment, where a CDN fetch would silently
+    # leave the table unsortable.
+    current = env_card("b")
+    current["headline"] = [
+        {"block": "retrieval", "metric": "hit_rate@5", "value": 0.95, "better": "higher"}
+    ]
+    # Both sortable tables only render when they have rows.
+    current["per_question"] = [{
+        "question_id": "tp-0001", "question": "who?", "gold_sitting": "dr_2026-06-22",
+        "gold_pages": [3], "hit@5": True, "page_citation": "page", "scores": {},
+    }]
+    diff = compare(current, env_card("a"))
+    diff["per_question"] = [{
+        "question_id": "tp-0001", "question": "who?", "gold_sitting": "dr_2026-06-22",
+        "hit@5": {"baseline": 0.8, "current": 0.4},
+        "correctness": {"baseline": 5, "current": 3},
+        "direction": "regressed",
+    }]
+    html = render(current, diff)
+
+    assert html.count('class="sortable"') == 2   # deltas table and questions table
+    assert "localeCompare" in html          # the sort itself, inlined
+    assert "src=\"http" not in html and "href=\"http" not in html
+
+
+def test_a_delta_cell_sorts_on_the_current_value_not_the_baseline():
+    # Delta cells read "0.80 → 0.40". Sorting on the first number would order by
+    # where a question started, burying the questions that fell furthest.
+    from rag_eval.reporting.html import _JS
+
+    assert "nums[nums.length-1]" in _JS
