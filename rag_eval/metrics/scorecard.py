@@ -29,6 +29,10 @@ HEADLINE = (
     ("generation", "hallucination_rate", "lower"),
     ("ops", "error_rate", "lower"),
 )
+#: p95 this many times p50 is a stall, not a tail. Chosen well above ordinary
+#: variance so a merely slow run does not trip it.
+LATENCY_TAIL_RATIO = 10
+
 
 
 @dataclass
@@ -217,6 +221,27 @@ def _warnings(card: Scorecard) -> list[str]:
     error_rate = card.ops.get("error_rate")
     if error_rate:
         out.append(f"Adapter error rate {error_rate:.1%} — failed questions are excluded from judging.")
+
+    # A long tail is a cost to plan for; a bimodal split is a stall to fix. They
+    # look the same in a percentile table, so say which one this is rather than
+    # letting a reader inherit p95 as the stack's steady-state latency.
+    latency = card.ops.get("latency_ms") or {}
+    p50, p95 = latency.get("p50"), latency.get("p95")
+    if p50 and p95 and p95 >= p50 * LATENCY_TAIL_RATIO:
+        detail = ""
+        p99, top = latency.get("p99"), latency.get("max")
+        if p99 and top and top <= p99 * 1.5:
+            detail = (
+                f" p99 ({p99 / 1000:.0f}s) and max ({top / 1000:.0f}s) sit close together, "
+                f"which is the shape of a fixed upstream timeout-and-retry rather than "
+                f"work that genuinely takes that long."
+            )
+        out.append(
+            f"Latency is bimodal, not a long tail: p50 {p50 / 1000:.1f}s but p95 "
+            f"{p95 / 1000:.0f}s ({p95 / p50:.0f}x).{detail} Most questions answer quickly "
+            f"and a minority stall. Quote p50 as the typical cost; treat a p95 move as a "
+            f"stall-rate signal, not a retrieval-quality one."
+        )
 
     env = card.rag_environment
     if env:

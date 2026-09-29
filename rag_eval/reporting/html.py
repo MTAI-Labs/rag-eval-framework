@@ -72,7 +72,7 @@ table.sortable th[data-dir='asc']::after{content:'\25B2'}
 table.sortable th[data-dir='desc']::after{content:'\25BC'}
 """
 
-_JS = """
+_JS = r"""
 const rows=[...document.querySelectorAll('#questions tbody tr')];
 const q=document.getElementById('filter'),f=document.getElementById('only');
 function apply(){const t=q.value.toLowerCase(),m=f.value;
@@ -137,7 +137,7 @@ def _headline_cards(scorecard: dict[str, Any], diff: dict[str, Any] | None) -> s
     for row in scorecard.get("headline", []):
         key = (row["block"], row["metric"])
         value = row["value"]
-        shown = _pct(value) if _is_rate(row["metric"]) else _fmt(value)
+        shown = _pct(value) if _is_rate(row["metric"], row.get("block", "")) else _fmt(value)
         delta = by_metric.get(key)
         delta_html = f'<div class="d">{_delta_html(delta)} vs baseline</div>' if delta else ""
         cards.append(
@@ -147,7 +147,16 @@ def _headline_cards(scorecard: dict[str, Any], diff: dict[str, Any] | None) -> s
     return f'<div class="cards">{"".join(cards)}</div>'
 
 
-def _is_rate(metric: str) -> bool:
+def _is_rate(metric: str, block: str = "") -> bool:
+    """Should this value render as a percentage?
+
+    The metric name alone cannot decide. ``citation_accuracy`` is a 0-1 rate in
+    the retrieval block and a 1-5 judge score in the generation block, and
+    formatting the score as a percentage printed 4.7143 as "471.4%" on a
+    scorecard meant for circulation.
+    """
+    if block == "generation" and metric in DIMENSIONS:
+        return False
     return (
         metric.startswith(("hit_rate", "recall"))
         or metric.endswith(("_rate", "_accuracy"))
@@ -282,7 +291,7 @@ def _judges_table(judges: dict[str, Any], generation: dict[str, Any]) -> str:
     )
 
 
-def _metric_block(title: str, data: dict[str, Any]) -> str:
+def _metric_block(title: str, data: dict[str, Any], block: str = "") -> str:
     rows = []
     for key, value in data.items():
         if isinstance(value, dict):
@@ -294,7 +303,8 @@ def _metric_block(title: str, data: dict[str, Any]) -> str:
                     f"<td class='num'>{_fmt(sub_value, 4)}</td></tr>"
                 )
         else:
-            shown = _pct(value) if _is_rate(key) and isinstance(value, float) else _fmt(value, 4)
+            shown = (_pct(value) if _is_rate(key, block) and isinstance(value, float)
+                     else _fmt(value, 4))
             rows.append(f"<tr><td class='mono'>{_esc(key)}</td><td class='num'>{shown}</td></tr>")
     return (
         f"<h2>{_esc(title)}</h2><div class='scroll'><table><thead><tr><th>Metric</th>"
@@ -384,9 +394,9 @@ def render(
 {_headline_cards(scorecard, diff)}
 {_diff_table(diff)}
 {_moved_questions(diff)}
-{_metric_block("Retrieval", scorecard.get("retrieval", {}))}
-{_metric_block("Generation", scorecard.get("generation", {}))}
-{_metric_block("Ops", scorecard.get("ops", {}))}
+{_metric_block("Retrieval", scorecard.get("retrieval", {}), "retrieval")}
+{_metric_block("Generation", scorecard.get("generation", {}), "generation")}
+{_metric_block("Ops", scorecard.get("ops", {}), "ops")}
 {_judges_table(scorecard.get("judges", {}), scorecard.get("generation", {}))}
 {_environment_block(scorecard.get("rag_environment", {}))}
 {_questions_table(scorecard.get("per_question", []))}

@@ -232,3 +232,48 @@ def test_a_delta_cell_sorts_on_the_current_value_not_the_baseline():
     from rag_eval.reporting.html import _JS
 
     assert "nums[nums.length-1]" in _JS
+
+
+def test_a_judge_score_is_not_printed_as_a_percentage():
+    # citation_accuracy is a 0-1 rate under retrieval and a 1-5 judge score
+    # under generation. Formatting on the name alone printed 4.7143 as
+    # "471.4%" on a scorecard meant for circulation.
+    from rag_eval.reporting.html import _is_rate
+
+    assert _is_rate("citation_accuracy", "retrieval") is True
+    assert _is_rate("citation_accuracy", "generation") is False
+    assert _is_rate("faithfulness", "generation") is False
+    # the rates that live beside those scores keep their percentage
+    assert _is_rate("citation_accuracy_pass_rate", "generation") is True
+    assert _is_rate("hallucination_rate", "generation") is True
+    assert _is_rate("recall@5", "retrieval") is True
+
+
+def test_the_generation_block_renders_scores_and_rates_differently():
+    current = env_card("b")
+    current["generation"] = {
+        "citation_accuracy": 4.7143,
+        "citation_accuracy_pass_rate": 0.8949,
+        "hallucination_rate": 0.0081,
+    }
+    html = render(current, None)
+
+    assert "471.4%" not in html
+    assert "4.7143" in html
+    assert "89.5%" in html
+
+
+def test_a_bimodal_latency_is_called_out_rather_than_left_as_a_tail():
+    # p95 many times p50 is a stall to fix, not a cost to plan for, and the two
+    # look identical in a percentile table.
+    from rag_eval.metrics.scorecard import LATENCY_TAIL_RATIO, Scorecard, _warnings
+
+    card = Scorecard(run_id="r", adapter="mock")
+    card.ops = {"latency_ms": {"p50": 1413.87, "p95": 121930.95,
+                               "p99": 123545.55, "max": 130708.71}}
+    note = " ".join(_warnings(card))
+    assert "bimodal" in note and "timeout-and-retry" in note
+
+    card.ops = {"latency_ms": {"p50": 1000.0, "p95": 1000.0 * (LATENCY_TAIL_RATIO - 1),
+                               "p99": 9500.0, "max": 9900.0}}
+    assert "bimodal" not in " ".join(_warnings(card))
