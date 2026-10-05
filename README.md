@@ -10,6 +10,16 @@ TanyaParlimen's production RAG.
 
 ---
 
+## Runbook
+
+**[RUNBOOK.md](RUNBOOK.md) is the operating manual** — run it every time the RAG
+service changes. It covers re-running the benchmark, reading the scorecard and
+regression diff, the go/no-go decision rule, adjudicating flagged rows,
+extending the golden set from a UAT round, and adding a new adapter. The current
+baseline numbers live there too.
+
+This README covers setup, metric formulas and architecture.
+
 ## Quickstart
 
 ```bash
